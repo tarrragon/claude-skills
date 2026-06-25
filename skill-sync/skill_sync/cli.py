@@ -15,7 +15,16 @@ import urllib.request
 from pathlib import Path
 
 DEFAULT_REPO = "https://github.com/tarrragon/claude-skills.git"
-EXCLUDE_DIRS = {"project-integration"}
+EXCLUDE_DIRS = {"project-integration", ".venv", "__pycache__", ".pytest_cache", "build", ".egg-info"}
+
+
+def _should_exclude_file(rel_path: str) -> bool:
+    """Check if a file path should be excluded (covers both dir names and suffixes)."""
+    parts = Path(rel_path).parts
+    for part in parts:
+        if part in EXCLUDE_DIRS or part.endswith(".egg-info"):
+            return True
+    return False
 
 
 def get_repo_url() -> str:
@@ -82,9 +91,6 @@ def run_git(args: list[str], cwd: Path | None = None) -> subprocess.CompletedPro
     return result
 
 
-def _should_exclude(name: str) -> bool:
-    return name in EXCLUDE_DIRS
-
 
 def compute_diff(src: Path, dst: Path) -> dict[str, list[str]]:  # i18n-exempt
     """Compare src and dst directories, return categorized file lists.
@@ -106,7 +112,7 @@ def compute_diff(src: Path, dst: Path) -> dict[str, list[str]]:  # i18n-exempt
     for f in src.rglob("*"):
         if f.is_file():
             rel = str(f.relative_to(src))
-            if any(_should_exclude(part) for part in f.relative_to(src).parts):
+            if _should_exclude_file(rel):
                 continue
             src_files.add(rel)
             dst_file = dst / rel
@@ -121,7 +127,7 @@ def compute_diff(src: Path, dst: Path) -> dict[str, list[str]]:  # i18n-exempt
         for f in dst.rglob("*"):
             if f.is_file():
                 rel = str(f.relative_to(dst))
-                if any(_should_exclude(part) for part in f.relative_to(dst).parts):
+                if _should_exclude_file(rel):
                     continue
                 if rel not in src_files:
                     diff["dst_only"].append(rel)
