@@ -15,7 +15,7 @@ import urllib.request
 from pathlib import Path
 
 DEFAULT_REPO = "https://github.com/tarrragon/claude-skills.git"
-EXCLUDE_DIRS = {"project-integration"}
+EXCLUDE_DIRS = {"project-integration", "__pycache__"}
 
 
 def get_repo_url() -> str:
