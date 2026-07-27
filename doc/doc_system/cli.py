@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from doc_system.commands import query, list_cmd, nav, domain, status, test_map, create, update, batch_init, uc
+from doc_system.commands import query, list_cmd, nav, domain, status, test_map, create, update, batch_init, uc, validate
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -57,7 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser = subparsers.add_parser("create", help="從模板建立新文件")
     create_parser.add_argument(
         "type",
-        choices=["proposal", "spec", "usecase"],
+        choices=["proposal", "spec", "usecase", "data-contract"],
         help="文件類型",
     )
     create_parser.add_argument("id", nargs="?", default=None, help="文件 ID（省略則自動分配下一個序號）")
@@ -65,7 +65,15 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument(
         "--domain",
         default=None,
-        help="spec 的 domain 子目錄（僅 spec 類型需要）",
+        help="spec/data-contract 的 domain 子目錄（僅需要 domain 的類型需要）",
+    )
+
+    # next-id
+    next_id_parser = subparsers.add_parser("next-id", help="唯讀查詢下一個可分配的 ID（不建立檔案）")
+    next_id_parser.add_argument(
+        "type",
+        choices=["proposal", "spec", "usecase", "data-contract"],
+        help="文件類型",
     )
 
     # batch-init
@@ -80,6 +88,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--status",
         required=True,
         help="新狀態（draft/discussing/confirmed/implemented/withdrawn）",
+    )
+
+    # validate
+    validate_parser = subparsers.add_parser(
+        "validate", help="依 frontmatter subdomain 分派章節 schema 驗證"
+    )
+    validate_parser.add_argument("doc_id", help="文件 ID（如 SPEC-002）")
+
+    # validate-filenames
+    subparsers.add_parser(
+        "validate-filenames",
+        help="掃描各 doc type 目錄，驗證檔名是否符合配號器慣例（防重號盲區）",
     )
 
     # uc（子命令群組：list/verify/trace/context）
@@ -137,9 +157,12 @@ COMMAND_HANDLERS = {
     "status": status.execute,
     "test-map": test_map.execute,
     "create": create.execute,
+    "next-id": create.execute_next_id,
     "batch-init": batch_init.execute,
     "update": update.execute,
     "uc": uc.execute,
+    "validate": validate.execute,
+    "validate-filenames": validate.execute_filenames,
 }
 
 

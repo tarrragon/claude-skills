@@ -11,13 +11,14 @@ description: "需求追蹤文件系統（proposals/spec/usecases）的查詢、�
 
 ---
 
-## 五種文件類型
+## 六種文件類型
 
 | 類型 | 目錄 | 核心問題 | 詳細規範 |
 |------|------|---------|---------|
 | Proposal | `docs/proposals/` | 為什麼要做？做什麼不做什麼？ | Read `references/proposals.md` |
 | Spec | `docs/spec/{domain}/` | 功能規格是什麼？ | Read `references/spec.md` |
 | DomainMap | `docs/spec/{domain}/domain-map.md`（單 domain 退化 `docs/domain-map.md`） | domain bundle 邊界、依賴方向、層測試策略？（DDD 水平視角，正交 UC）| `templates/domain-map-template.md` |
+| DataContract | `docs/spec/{domain}/`（沿用 SPEC-NNN 編號體系，`subdomain: data-contract`） | 資料層邏輯契約（DB-agnostic）與實作綁定（DB-specific）是什麼？（schema 語意、不變式、保證層歸屬） | `templates/data-contract-template.md` |
 | UseCase | `docs/usecases/` | 使用場景和驗收標準？ | Read `references/usecases.md` |
 | Tracking | `docs/proposals-tracking.yaml` | 提案進度如何？ | Read `references/tracking.md` |
 
@@ -38,14 +39,15 @@ description: "需求追蹤文件系統（proposals/spec/usecases）的查詢、�
 | `query` | 查詢文件 | `/doc query PROP-001` 或 `/doc query UC-01` |
 | `list` | 列出文件 | `/doc list proposals` 或 `/doc list specs` |
 | `nav` | 跨文件導航 | `/doc nav UC-01` → 相關 spec/proposal/ticket |
-| `domain` | Domain 地圖 | `/doc domain extraction` |
+| `domain` | Domain 地圖 | `/doc domain {domain}`（省略 `{domain}` 動態列出當前專案所有 domain） |
 | `status` | 追蹤狀態 | `/doc status` |
 | `test-map` | UC 測試對應 | `/doc test-map UC-01` |
-| `batch-init` | 批量建置骨架 | `/doc batch-init --proposals PROP-007,PROP-008 --domain collector` |
+| `batch-init` | 批量建置骨架 | `/doc batch-init --proposals PROP-007,PROP-008 --domain {domain}` |
 | `uc list` | 列出合法 UC 編號+標題（SSOT 動態解析） | `/doc uc list` |
 | `uc verify [path]` | 驗證路徑內 UC token 白名單合規（可掛 CI） | `/doc uc verify lib`（exit 0=pass / 1=violation） |
 | `uc trace <UC-XX>` | 列出指定 UC 的 code 引用位置 | `/doc uc trace UC-01` |
 | `uc context <UC-XX\|ticket-id>` | 輸出 UC 標題+spec 位置+code 引用 top-N，供派發 Context Bundle 引用 | `/doc uc context UC-01` 或 `/doc uc context <ticket-id>` |
+| `validate <SPEC-ID>` | 依 frontmatter subdomain 分派章節 schema 驗證（目前僅 data-contract） | `/doc validate SPEC-002`（exit 0=通過 / 1=章節缺失 / 2=文件不存在或 frontmatter 不可解析） |
 
 ---
 
@@ -84,16 +86,12 @@ DomainMap ──source_specs──→ Spec
 
 ### Domain 列表
 
-| Domain | 目錄 | 說明 |
-|--------|------|------|
-| core | `spec/core/` | 資料模型、錯誤處理、事件系統 |
-| extraction | `spec/extraction/` | 資料提取 |
-| platform | `spec/platform/` | 平台管理 |
-| data-management | `spec/data-management/` | 儲存、匯出、同步 |
-| messaging | `spec/messaging/` | 跨 context 通訊 |
-| page | `spec/page/` | 頁面偵測 |
-| system | `spec/system/` | 生命週期管理 |
-| user-experience | `spec/user-experience/` | UI、搜尋 |
+Domain 清單依專案而異（`docs/spec/` 下的子目錄），非本 Skill 固定內容。查詢當前專案實際 domain：
+
+```bash
+doc domain          # 無參數：動態列出 docs/spec/ 下所有 domain 子目錄
+doc domain <name>   # 帶 domain 名稱：列出該 domain 下的 spec 清單與關聯 UC
+```
 
 ---
 
@@ -105,27 +103,34 @@ DomainMap ──source_specs──→ Spec
 |------|------|------|
 | 提案模板 | `templates/proposal-template.md` | 建立新提案 |
 | 規格模板 | `templates/spec-template.md` | 建立新功能規格 |
-| Domain Map 模板 | `templates/domain-map-template.md` | 建立 domain bundle 邊界地圖（DDD 水平視角） |
+| Domain Map 模板 | `templates/domain-map-template.md` | 建立 domain bundle 邊界地圖（DDD 水平視角）。§3 每個 bundle 必須 `ls`/`grep` 驗證目標路徑存在後才標「已實作」，不存在標「規劃中」（PC-APP-012 防護） |
+| 資料契約模板 | `templates/data-contract-template.md` | 建立資料層邏輯契約與實作綁定文件（DB-agnostic / DB-specific 兩區） |
 | Design System 規格模板 | `templates/design-system-spec-template.md` | 建立 UI 設計系統規格 |
 | 用例模板 | `templates/usecase-template.md` | 建立新用例 |
 
 ### 使用方式
 
+`doc create` 已接線的類型（proposal / spec / usecase / data-contract）具備下列能力，優先使用而非手動 `cp`：自動編號（掃描既有檔案分配下一個序號，`--id` 可覆寫）、frontmatter 日期自動替換（`created` / `updated` / `proposed_date`）、proposal 類型自動新增 `proposals-tracking.yaml` entry。`doc next-id <type>` 可唯讀查詢下一個可分配 ID，不建立檔案。
+
 ```bash
 # 建立提案
-cp .claude/skills/doc/templates/proposal-template.md docs/proposals/PROP-{NNN}-{desc}.md
+doc create proposal --title "{提案標題}"
 
 # 建立功能規格
-cp .claude/skills/doc/templates/spec-template.md docs/spec/{domain}/{name}.md
+doc create spec --title "{規格標題}" --domain {domain}
 
-# 建立 Domain Map（多 domain 專案放 domain 子目錄；單 domain 專案放 docs/ 根層）
-cp .claude/skills/doc/templates/domain-map-template.md docs/spec/{domain}/domain-map.md
-
-# 建立 Design System 規格
-cp .claude/skills/doc/templates/design-system-spec-template.md docs/spec/design-system-spec.md
+# 建立資料契約（與 spec 共用 SPEC-NNN 編號空間，subdomain 固定為 data-contract）
+doc create data-contract --title "{name}-data-contract" --domain {domain}
 
 # 建立用例
-cp .claude/skills/doc/templates/usecase-template.md docs/usecases/UC-{XX}-{desc}.md
+doc create usecase --title "{用例名稱}"
+
+# 查詢下一個可分配 ID（不建立檔案）
+doc next-id spec
+
+# 尚未接線的類型（domain-map / design-system-spec）仍用 cp
+cp .claude/skills/doc/templates/domain-map-template.md docs/spec/{domain}/domain-map.md
+cp .claude/skills/doc/templates/design-system-spec-template.md docs/spec/design-system-spec.md
 ```
 
 ---
@@ -214,9 +219,14 @@ saas-tech-selection skill 做完技術選型訪談後產出「決策記錄」，
 
 ---
 
+**Version**: 1.11.0 — 新增 `validate <SPEC-ID>` 子命令：依 frontmatter subdomain 分派章節 schema 驗證（data-contract 驗可攜性邊界原則/A.1-A.6/B.1-B.3/適用判準兩旗標非空；非 data-contract 明確路由 `/spec validate`，exit 0/1/2），對應 `doc_system/commands/validate.py`（0.2.1-W1-008）
+**Version**: 1.10.0 — Domain 列表改為指引 `doc domain` 動態查詢，移除他專案（book_overview_app）的 extraction/platform/messaging 等固定清單（違反 framework-asset-separation，0.2.1-W1-007）
+**Version**: 1.9.0 — Domain Map 模板列補 §3 bundle 實作狀態驗證要求（`ls`/`grep` 驗證存在才標「已實作」，PC-APP-012 防護收編自 book_overview_app，0.2.1-W1-006）
+**Version**: 1.8.0 — data-contract 接線 doc create CLI（取代 cp 手動流程，取得自動編號/日期/tracking）+ 新增 `doc next-id` 唯讀查詢子命令（0.2.1-W1-001）
+**Version**: 1.7.0 — data contract 升為 first-class 文件類型（五種→六種）：新增 DataContract 列 + data-contract-template 模板 + 使用方式 cp 命令（PROP-002 In Scope 1，0.2.0-W2-001）
 **Version**: 1.6.0 — domain map 升為 first-class 文件類型（四種→五種）：新增 DomainMap 列 + domain-map-template 模板 + 使用方式 cp 命令（W2-016.1）；saas 銜接節補「domain map 不因無 saas 而略過」調和說明——非 saas 起手由 version-bootstrap Step 2.5 從 domain-map-template 新建（W2-016.2）
 **Version**: 1.5.0
-**Last Updated**: 2026-07-22
+**Last Updated**: 2026-07-26
 
 ---
 
