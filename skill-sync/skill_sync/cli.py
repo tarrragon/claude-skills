@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import filecmp
+import hashlib
 import os
 import shutil
 import json
@@ -15,27 +16,103 @@ import urllib.request
 from pathlib import Path
 
 DEFAULT_REPO = "https://github.com/tarrragon/claude-skills.git"
-EXCLUDE_DIRS = {"project-integration", "__pycache__"}
+EXCLUDE_DIRS = {
+    "project-integration",
+    ".venv",
+    "__pycache__",
+    ".pytest_cache",
+    "build",
+    ".egg-info",
+    "hook-logs",
+}
+
+# 標記檔存在即宣告該 skill 的本地內容為刻意客製，`pull`（全量）分歧檢查略過回報
+# （0.2.1-W3-124 acceptance 4 的宣告式 local override 決策：見 update_sync_manifest
+# 與 _classify_sync_status 的 docstring）。
+SKILL_SYNC_OVERRIDE_MARKER = ".skill-sync-override"
+
+
+def _should_exclude_file(rel_path: str) -> bool:
+    """Check if a file path should be excluded (covers dir names, incl. nested hook-logs/)."""
+    parts = Path(rel_path).parts
+    for part in parts:
+        if part in EXCLUDE_DIRS or part.endswith(".egg-info"):
+            return True
+    return False
 
 
 def get_repo_url() -> str:
     return os.environ.get("SKILL_SYNC_REPO", DEFAULT_REPO)
 
 
-def update_versions_json(repo_dir: Path) -> None:
-    """掃描 repo 內所有 skill 的 SKILL.md 版本，更新 versions.json 並 push。"""
-    versions: dict[str, str] = {}
+def _extract_version_string(text: str) -> str | None:
+    """從 SKILL.md 文字擷取版本字串。
+
+    僅供人類於 changelog 對照閱讀，不進入同步決策（見 update_sync_manifest）。
+    """
+    m = re.search(r"\*\*Version\*\*:\s*(\S+)", text)
+    if not m:
+        m = re.search(r"^version:\s*(\S+)", text, re.MULTILINE)
+    return m.group(1) if m else None
+
+
+def compute_content_hash(skill_dir: Path) -> str | None:
+    """依檔案內容計算 skill 目錄的確定性雜湊，取代版本字串作為內容同一性判定依據。
+
+    對 (相對路徑, 檔案位元組) 依路徑排序後逐一雜湊，雜湊值只反映內容與檔案樹結構，
+    與 mtime、掃描順序、檔案系統無關：相同內容不論何處產生都得到相同雜湊，內容不同
+    則版本字串相同也得到不同雜湊。這修正的是版本字串同時被當內容同一性與演化祖先關係
+    使用、卻兩者都擔不起的機制缺陷（0.2.1-W3-124 §11.2：blog 與 canonical 的 2.5.0
+    號碼相同、內容不同，曾被判為 up_to_date）。回傳 None 表示目錄不存在。
+    """
+    if not skill_dir.is_dir():
+        return None
+
+    rel_paths: list[str] = []
+    for f in skill_dir.rglob("*"):
+        if not f.is_file():
+            continue
+        rel = str(f.relative_to(skill_dir))
+        if f.name == SKILL_SYNC_OVERRIDE_MARKER or _should_exclude_file(rel):
+            continue
+        rel_paths.append(rel)
+    rel_paths.sort()
+
+    hasher = hashlib.sha256()
+    for rel in rel_paths:
+        hasher.update(rel.encode("utf-8"))
+        hasher.update((skill_dir / rel).read_bytes())
+    return hasher.hexdigest()
+
+
+def _has_local_override(skill_dir: Path) -> bool:
+    """標記檔存在即宣告本地內容為刻意客製，`pull`（全量）分歧檢查略過此 skill。"""
+    return (skill_dir / SKILL_SYNC_OVERRIDE_MARKER).is_file()
+
+
+def update_sync_manifest(repo_dir: Path) -> None:
+    """掃描 repo 內所有 skill，寫入版本字串（人類可讀）與內容雜湊（同步判定用）至 versions.json。
+
+    版本字串不再進入同步決策：舊實作以版本字串相等判定內容同一性、以 semver 大小
+    判定覆蓋方向，但兩個獨立演化的分支可能巧合共用同一版本號卻內容不同，semver
+    比較亦預設線性演進，對分支式分歧失準（0.2.1-W3-124 §11.2）。版本字串保留於本檔
+    供人類於 changelog 對照，內容同一性判定改用 hash 欄位。
+    """
+    manifest: dict[str, dict[str, str]] = {}
     for skill_md in sorted(repo_dir.glob("*/SKILL.md")):
         name = skill_md.parent.name
+        content_hash = compute_content_hash(skill_md.parent)
+        if content_hash is None:
+            continue
+        entry: dict[str, str] = {"hash": content_hash}
         try:
             text = skill_md.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
-            continue
-        m = re.search(r"\*\*Version\*\*:\s*(\S+)", text)
-        if not m:
-            m = re.search(r"^version:\s*(\S+)", text, re.MULTILINE)
-        if m:
-            versions[name] = m.group(1)
+            text = ""
+        version = _extract_version_string(text)
+        if version:
+            entry["version"] = version
+        manifest[name] = entry
 
     vf = repo_dir / "versions.json"
     existing = {}
@@ -45,11 +122,11 @@ def update_versions_json(repo_dir: Path) -> None:
         except (json.JSONDecodeError, OSError):
             pass
 
-    if versions == existing:
+    if manifest == existing:
         return
 
     vf.write_text(
-        json.dumps(versions, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     run_git(["add", "versions.json"], cwd=repo_dir)
@@ -82,9 +159,6 @@ def run_git(args: list[str], cwd: Path | None = None) -> subprocess.CompletedPro
     return result
 
 
-def _should_exclude(name: str) -> bool:
-    return name in EXCLUDE_DIRS
-
 
 def compute_diff(src: Path, dst: Path) -> dict[str, list[str]]:  # i18n-exempt
     """Compare src and dst directories, return categorized file lists.
@@ -106,7 +180,7 @@ def compute_diff(src: Path, dst: Path) -> dict[str, list[str]]:  # i18n-exempt
     for f in src.rglob("*"):
         if f.is_file():
             rel = str(f.relative_to(src))
-            if any(_should_exclude(part) for part in f.relative_to(src).parts):
+            if _should_exclude_file(rel):
                 continue
             src_files.add(rel)
             dst_file = dst / rel
@@ -121,7 +195,7 @@ def compute_diff(src: Path, dst: Path) -> dict[str, list[str]]:  # i18n-exempt
         for f in dst.rglob("*"):
             if f.is_file():
                 rel = str(f.relative_to(dst))
-                if any(_should_exclude(part) for part in f.relative_to(dst).parts):
+                if _should_exclude_file(rel):
                     continue
                 if rel not in src_files:
                     diff["dst_only"].append(rel)
@@ -131,10 +205,22 @@ def compute_diff(src: Path, dst: Path) -> dict[str, list[str]]:  # i18n-exempt
     return diff
 
 
-def print_diff_preview(diff: dict[str, list[str]], direction: str) -> None:
-    """Print a human-readable diff preview."""
+def print_diff_preview(
+    diff: dict[str, list[str]], direction: str, prune: bool = False
+) -> None:
+    """Print a human-readable diff preview.
+
+    The dst-only label tracks what will actually happen: with --prune those
+    files get deleted, so labelling them "preserved" would misreport a
+    destructive operation as a safe one.
+    """
     has_changes = diff["added"] or diff["modified"]
-    preserve_label = "remote-only (preserved)" if direction == "push" else "local-only (preserved)"
+    if direction == "push" and prune:
+        preserve_label = "PRUNE (will be deleted)"
+    else:
+        preserve_label = (
+            "remote-only (preserved)" if direction == "push" else "local-only (preserved)"
+        )
 
     if not has_changes and not diff["dst_only"]:
         print("  No changes detected.")
@@ -173,6 +259,34 @@ def overlay_copy(src: Path, dst: Path, diff: dict[str, list[str]]) -> int:
         shutil.copy2(src_file, dst_file)
         copied += 1
     return copied
+
+
+def prune_dst_only(dst: Path, diff: dict[str, list[str]]) -> int:
+    """Delete dst-only files, then drop directories the deletion left empty.
+
+    Only entries `compute_diff` classified as dst_only are touched, so
+    EXCLUDE_DIRS content (project-integration/, hook-logs/, ...) is out of
+    reach by construction — it never enters that list.
+
+    Empty-directory cleanup is unconditional rather than limited to directories
+    this call emptied: git tracks files, not directories, so a leftover empty
+    directory is local noise that would never reach the remote anyway, and
+    scanning for "which ones did I empty" costs more than it protects.
+    """
+    removed = 0
+    for rel in diff["dst_only"]:
+        target = dst / rel
+        if target.is_file():
+            target.unlink()
+            removed += 1
+
+    if removed:
+        directories = [p for p in dst.rglob("*") if p.is_dir()]
+        for directory in sorted(directories, key=lambda p: len(p.parts), reverse=True):
+            if not any(directory.iterdir()):
+                directory.rmdir()
+
+    return removed
 
 
 def cmd_pull(args: argparse.Namespace) -> None:
@@ -225,6 +339,7 @@ def cmd_push(args: argparse.Namespace) -> None:
     name: str = args.name
     message: str = args.message or f"Update skill: {name}"
     force: bool = args.force
+    prune: bool = getattr(args, "prune", False)
     repo_url = get_repo_url()
     skills_dir = get_skills_dir()
     source = skills_dir / name
@@ -250,13 +365,19 @@ def cmd_push(args: argparse.Namespace) -> None:
 
         diff = compute_diff(source, target)
         print("\n[Push Preview]")
-        print_diff_preview(diff, direction="push")
+        print_diff_preview(diff, direction="push", prune=prune)
 
-        if not diff["added"] and not diff["modified"]:
+        prunable = diff["dst_only"] if prune else []
+        # Deletions alone are a real change: without prunable in this guard,
+        # `--prune` on an otherwise-identical skill would report "nothing to
+        # push" and silently skip the deletions the flag was asked for.
+        if not diff["added"] and not diff["modified"] and not prunable:
             print("\nNo changes to push.")
             return
 
-        if diff["dst_only"]:
+        if prunable:
+            print(f"\n  Note: {len(prunable)} remote-only file(s) will be DELETED (--prune).")
+        elif diff["dst_only"]:
             print(f"\n  Note: {len(diff['dst_only'])} remote-only file(s) will be preserved (not deleted).")
 
         if not force:
@@ -270,6 +391,9 @@ def cmd_push(args: argparse.Namespace) -> None:
                 return
 
         overlay_copy(source, target, diff)
+        if prunable:
+            pruned = prune_dst_only(target, diff)
+            print(f"  Pruned {pruned} remote-only file(s).")
 
         run_git(["add", "-A"], cwd=tmp)
 
@@ -284,34 +408,63 @@ def cmd_push(args: argparse.Namespace) -> None:
         run_git(["commit", "-m", message], cwd=tmp)
         run_git(["push"], cwd=tmp)
 
-        update_versions_json(tmp)
+        update_sync_manifest(tmp)
 
     print(f"\nPushed '{name}' to {repo_url}")
 
 
-def _parse_semver(v: str) -> tuple[int, ...]:
-    """Parse version string to comparable tuple. Non-numeric parts become 0."""
-    parts = []
-    for p in v.split("."):
-        try:
-            parts.append(int(p))
-        except ValueError:
-            parts.append(0)
-    return tuple(parts)
+def _classify_sync_status(
+    local_manifest: dict[str, dict[str, str]],
+    remote_manifest: dict,
+    skills_dir: Path,
+) -> tuple[list[str], list[tuple[str, str, str]], list[str], list[str]]:
+    """依內容雜湊分類本地 skill 相對 remote manifest 的同步狀態。
+
+    回傳 (up_to_date, diverged, overridden, skipped_no_hash)。雜湊相同 -> up_to_date；
+    雜湊不同 -> diverged（覆蓋方向未知，需人工執行 pull/push 決定，見下方 rationale）；
+    標記 SKILL_SYNC_OVERRIDE_MARKER -> overridden（略過分歧判定）；remote 尚未有 hash
+    欄位（舊格式 versions.json，需下次 push 後才會補上）-> skipped_no_hash。
+
+    不再嘗試自動判定覆蓋方向：舊實作以 semver 大小決定「該推或該拉」，但這預設了
+    線性演進，對分支式分歧（兩個獨立演化的副本巧合共用同一版本號）必定失準
+    （0.2.1-W3-124 §11.2）。內容雜湊只能證明「相同或不同」，方向留給人工判斷。
+    """
+    up_to_date: list[str] = []
+    diverged: list[tuple[str, str, str]] = []
+    overridden: list[str] = []
+    skipped_no_hash: list[str] = []
+
+    for name, local_entry in sorted(local_manifest.items()):
+        if _has_local_override(skills_dir / name):
+            overridden.append(name)
+            continue
+
+        remote_entry = remote_manifest.get(name)
+        if not isinstance(remote_entry, dict) or "hash" not in remote_entry:
+            skipped_no_hash.append(name)
+            continue
+
+        if local_entry["hash"] == remote_entry["hash"]:
+            up_to_date.append(name)
+        else:
+            local_display = local_entry.get("version") or local_entry["hash"][:8]
+            remote_display = remote_entry.get("version") or remote_entry["hash"][:8]
+            diverged.append((name, local_display, remote_display))
+
+    return up_to_date, diverged, overridden, skipped_no_hash
 
 
 def cmd_pull_all(args: argparse.Namespace) -> None:
-    """掃描本地已安裝 skill，比對 versions.json，自動拉取遠端較新者。
+    """掃描本地已安裝 skill，以內容雜湊比對 versions.json，回報分歧供人工處理。
 
-    - 遠端較新：自動拉取（不問確認）
-    - 本地較新：僅報告（可能是本地修改尚未 push）
-    - 版本相同：靜默跳過
+    --force 對此路徑無效：分歧不再自動套用（見 _classify_sync_status），每個分歧
+    項目一律需個別執行 `skill-sync pull <name>` 或 `skill-sync push <name>` 決定方向。
     """
     repo_url = get_repo_url()
     skills_dir = get_skills_dir()
 
-    local_versions = _extract_local_versions(skills_dir)
-    if not local_versions:
+    local_manifest = _extract_local_manifest(skills_dir)
+    if not local_manifest:
         print("No local skills found.")
         return
 
@@ -321,92 +474,80 @@ def cmd_pull_all(args: argparse.Namespace) -> None:
 
     try:
         req = urllib.request.Request(raw_url, headers={"User-Agent": "skill-sync"})
+        # magic-exempt
         with urllib.request.urlopen(req, timeout=10) as resp:
-            remote_versions: dict[str, str] = json.loads(resp.read())
+            remote_manifest: dict = json.loads(resp.read())
     except Exception as e:
-        print(f"Failed to fetch versions.json: {e}", file=sys.stderr)
-        sys.exit(1)
+        print(f"Failed to fetch versions.json: {e}")
+        print("Falling back to individual pull...")
+        remote_manifest = {}
 
-    outdated: list[tuple[str, str, str]] = []
-    local_newer: list[tuple[str, str, str]] = []
-    up_to_date: list[str] = []
-
-    for name, local_ver in sorted(local_versions.items()):
-        remote_ver = remote_versions.get(name)
-        if remote_ver is None:
-            continue
-        local_t = _parse_semver(local_ver)
-        remote_t = _parse_semver(remote_ver)
-        if remote_t > local_t:
-            outdated.append((name, local_ver, remote_ver))
-        elif local_t > remote_t:
-            local_newer.append((name, local_ver, remote_ver))
-        else:
-            up_to_date.append(name)
-
-    if local_newer:
-        print(f"[CONFLICT] {len(local_newer)} skill(s) have local version newer than remote:")
-        for name, local_ver, remote_ver in local_newer:
-            print(f"  {name}: local {local_ver} > remote {remote_ver}")
-        print()
-
-    if not outdated:
-        print(f"All {len(up_to_date)} installed skills are up to date.")
+    if not remote_manifest:
+        print("versions.json not available. Use 'skill-sync pull <name>' instead.")
         return
 
-    print(f"[Update] {len(outdated)} skill(s) to pull, {len(up_to_date)} up to date\n")
+    up_to_date, diverged, overridden, skipped_no_hash = _classify_sync_status(
+        local_manifest, remote_manifest, skills_dir
+    )
 
-    updated = 0
-    failed: list[str] = []
-    for name, local_ver, remote_ver in outdated:
-        print(f"  {name}: {local_ver} -> {remote_ver} ...", end=" ", flush=True)
-        pull_args = argparse.Namespace(name=name, force=True)
-        try:
-            cmd_pull(pull_args)
-            updated += 1
-        except SystemExit:
-            failed.append(name)
-            print("[FAIL]")
-        except Exception as e:
-            failed.append(name)
-            print(f"[FAIL] {e}")
+    if overridden:
+        print(f"[OVERRIDE] {len(overridden)} skill(s) declared local override "
+              f"(skipped from divergence check):")
+        for name in overridden:
+            print(f"  {name}")
 
-    print(f"\n[Done] Updated {updated}/{len(outdated)} skill(s)")
-    if failed:
-        print(f"[FAIL] {', '.join(failed)}")
+    if skipped_no_hash:
+        print(f"\n[SKIP] {len(skipped_no_hash)} skill(s) have no remote hash data yet "
+              f"(remote versions.json needs regenerating via next 'skill-sync push'):")
+        for name in skipped_no_hash:
+            print(f"  {name}")
+
+    if not diverged:
+        print(f"\nAll {len(up_to_date)} checked skill(s) are up to date.")
+        return
+
+    print(f"\n[DIVERGED] {len(diverged)} skill(s) differ from remote by content. "
+          f"Direction unknown from hash alone — review and resolve manually:\n")
+    for name, local_display, remote_display in diverged:
+        print(f"  {name}: local({local_display}) vs remote({remote_display})")
+        print(f"    -> skill-sync pull {name}   # inspect/take remote content")
+        print(f"    -> skill-sync push {name}   # inspect/send local content")
+
+    if up_to_date:
+        print(f"\n{len(up_to_date)} other skill(s) are up to date.")
 
 
 def _extract_single_version(skill_md: Path) -> str | None:
-    """從單一 SKILL.md 提取版本號。"""
+    """從單一 SKILL.md 提取版本號（僅供人類顯示，不進入同步判定）。"""
     if not skill_md.is_file():
         return None
     try:
         text = skill_md.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
-    m = re.search(r"\*\*Version\*\*:\s*(\S+)", text)
-    if not m:
-        m = re.search(r"^version:\s*(\S+)", text, re.MULTILINE)
-    return m.group(1) if m else None
+    return _extract_version_string(text)
 
 
-def _extract_local_versions(skills_dir: Path) -> dict[str, str]:
-    """掃描本地 skills/*/SKILL.md 提取版本號。"""
-    versions: dict[str, str] = {}
+def _extract_local_manifest(skills_dir: Path) -> dict[str, dict[str, str]]:
+    """掃描本地 skills/*，回傳每個 skill 的內容雜湊（同步判定用）與版本字串（人類顯示用）。"""
+    manifest: dict[str, dict[str, str]] = {}
     if not skills_dir.is_dir():
-        return versions
+        return manifest
     for skill_md in sorted(skills_dir.glob("*/SKILL.md")):
-        name = skill_md.parent.name
+        skill_dir = skill_md.parent
+        content_hash = compute_content_hash(skill_dir)
+        if content_hash is None:
+            continue
+        entry: dict[str, str] = {"hash": content_hash}
         try:
             text = skill_md.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
-            continue
-        m = re.search(r"\*\*Version\*\*:\s*(\S+)", text)
-        if not m:
-            m = re.search(r"^version:\s*(\S+)", text, re.MULTILINE)
-        if m:
-            versions[name] = m.group(1)
-    return versions
+            text = ""
+        version = _extract_version_string(text)
+        if version:
+            entry["version"] = version
+        manifest[skill_dir.name] = entry
+    return manifest
 
 
 def cmd_list(args: argparse.Namespace) -> None:
@@ -439,7 +580,15 @@ def cmd_list(args: argparse.Namespace) -> None:
             print(f"{d:<30} {desc}")
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
+    """Build the CLI parser.
+
+    Separated from main() so callers can inspect the available subcommands and
+    flags without executing anything — consumers that print "run skill-sync X"
+    guidance can assert X exists instead of the string silently going stale
+    (0.2.1-W3-351: sync-claude-push advertised a `pull-all` subcommand that
+    never existed).
+    """
     parser = argparse.ArgumentParser(
         prog="skill-sync",
         description="Sync Claude Code skills with a remote repository.",
@@ -457,10 +606,15 @@ def main() -> None:
     push_parser.add_argument("-m", "--message", help="Commit message", default=None)
     push_parser.add_argument("--force", "-f", action="store_true",
                              help="Apply changes without confirmation")
+    push_parser.add_argument("--prune", action="store_true",
+                             help="Delete remote-only files (default: keep them)")
 
     sub.add_parser("list", help="List available skills in remote repo")
+    return parser
 
-    args = parser.parse_args()
+
+def main() -> None:
+    args = build_parser().parse_args()
 
     if args.command == "pull" and args.name is None:
         cmd_pull_all(args)
