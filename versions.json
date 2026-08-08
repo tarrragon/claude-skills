@@ -106,10 +106,6 @@
     "hash": "e29ad0f2ffdd5b715b5bee9ab6a7ac710aa079ff246582abe6eb93015c6536aa",
     "version": "1.3.0"
   },
-  "i18n-checker": {
-    "hash": "419a4bd024b8e530ea6275db687aef6043ee17be3a0dcf75ea7c765724c5e7a6",
-    "version": "1.0.0"
-  },
   "impeccable": {
     "hash": "d7e1626af13b54360481928edd9f730385feb57c21ac5200e4d133553941da40",
     "version": "3.5.0"
@@ -153,10 +149,6 @@
     "hash": "319cc999f752c9385ffe89cd5ce541b8258e721f2abc500dcd9460166a7b1e94",
     "version": "1.1.0"
   },
-  "provider-architecture": {
-    "hash": "e2a62ed902cfb63b2e83620bc4279e98959b52c8bc19f81a3adec276675d60a9",
-    "version": "1.0.0"
-  },
   "requirement-protocol": {
     "hash": "0407f04b30cf87130b05e2962d9d80596ec24dccb29fc995ce1261ffcaeea04e",
     "version": "0.8.0"
@@ -189,10 +181,6 @@
     "hash": "60d3fc0ab187b2b6d94e53aac802f00f9cf69ce9de461772cf76ac29c368c08d",
     "version": "1.0.0"
   },
-  "style-guardian": {
-    "hash": "429b741fa4b7128990bbf54e03fbfd78a8a9f98c362565856243553bb8c50e85",
-    "version": "1.0.0"
-  },
   "tdd": {
     "hash": "dc5970062dadeaa56796464d5194a53be6f35f5653c853122474e200807f1d47",
     "version": "2.2.5"
@@ -208,10 +196,6 @@
   "test-assertion-design": {
     "hash": "61da509e1d9eebad94b408318b569e5d428d1ae456de1041585d38603a07201d",
     "version": "1.2.0"
-  },
-  "test-async-guardian": {
-    "hash": "0a27674c96b4295ce86b473365090d05f52dae0612a82ff4fd33c89389bb9d82",
-    "version": "1.0.0"
   },
   "ticket": {
     "hash": "685a2b4ac0c93bc323a52e908d48cb4a1a454c9162f79a88a070f13b2c155df4",
