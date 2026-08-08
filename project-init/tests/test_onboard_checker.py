@@ -281,7 +281,7 @@ class TestCheckHookCompleteness:
         """測試被排除的 Hook 不計入檢查."""
         hooks_dir = tmp_path / ".claude" / "hooks"
         hooks_dir.mkdir(parents=True)
-        self._create_hook_file(hooks_dir, "hook_utils.py")  # 預設排除
+        self._create_hook_file(hooks_dir, "old-backup.py")  # 預設排除（*-backup.py 模式）
         self._create_hook_file(hooks_dir, "test-hook.py")
 
         # 只登記 test-hook.py
@@ -290,7 +290,7 @@ class TestCheckHookCompleteness:
         result = check_hook_completeness(tmp_path)
 
         assert result.completeness_ok
-        assert "hook_utils.py" not in result.all_hooks
+        assert "old-backup.py" not in result.all_hooks
         assert result.excluded_count > 0
 
     def test_custom_exclude_list(self, tmp_path: Path) -> None:
@@ -795,7 +795,7 @@ class TestCheckLanguageStandards:
     """測試語言規範文件檢查（已移至 CLAUDE.md）."""
 
     def test_language_standards_always_exist(self, tmp_path: Path) -> None:
-        """測試語言規範已統一在 CLAUDE.md（根據 W1-017）."""
+        """測試語言規範已統一在 CLAUDE.md."""
         result = check_language_standards(tmp_path, "flutter")
 
         assert result.detected_language == "flutter"

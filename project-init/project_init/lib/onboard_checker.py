@@ -391,7 +391,7 @@ def check_claude_md(project_root: Path) -> FrameworkFileInfo:
 def check_tech_stack_section(project_root: Path) -> FrameworkFileInfo:
     """檢查 CLAUDE.md 是否包含技術選型 section.
 
-    根據 W1-017 重構，所有專案設定統一在 CLAUDE.md 的「技術選型與架構決策」section。
+    所有專案設定統一在 CLAUDE.md 的「技術選型與架構決策」section。
     本函式驗證 CLAUDE.md 是否包含相關內容。
 
     Args:
@@ -410,11 +410,18 @@ def check_tech_stack_section(project_root: Path) -> FrameworkFileInfo:
             path=None,
         )
 
-    # 讀取檔案內容並搜尋技術選型 section
+    # 讀取檔案內容並搜尋技術選型相關 section
     try:
         content = claude_md.read_text(encoding="utf-8")
-        # 搜尋技術選型相關標題
-        has_tech_section = "技術選型" in content
+        tech_keywords = [
+            "技術選型",
+            "語言特定規範",
+            "專案身份",
+            "開發語言",
+            "專案類型",
+            "技術架構",
+        ]
+        has_tech_section = any(kw in content for kw in tech_keywords)
         return FrameworkFileInfo(
             name="CLAUDE.md 技術選型",
             exists=has_tech_section,
@@ -434,7 +441,7 @@ def check_language_template(
 ) -> FrameworkFileInfo:
     """檢查語言特定模板是否存在.
 
-    已棄用（根據 W1-017，模板統一改至 CLAUDE.md）。
+    已棄用（模板統一改至 CLAUDE.md）。
     此函式保留為向後相容，但始終返回不存在。
 
     Args:
@@ -821,13 +828,32 @@ def check_claude_directory_structure(project_root: Path) -> ClaudeDirectoryCheck
     )
 
 
+def _find_hook_config_file(project_root: Path, filename: str,
+                           search_paths: list[str]) -> Path | None:
+    """在多個候選路徑中搜尋 Hook 配置檔.
+
+    Args:
+        project_root: 專案根目錄。
+        filename: 檔案名稱。
+        search_paths: 相對於 project_root 的候選目錄清單。
+
+    Returns:
+        找到的檔案 Path，或 None。
+    """
+    for rel_dir in search_paths:
+        candidate = project_root / rel_dir / filename
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def check_hook_configurations(project_root: Path) -> HookConfigurationCheckInfo:
     """檢查 Hook 配置檔完整性.
 
-    驗證 .claude/config/ 下存在所有必須設定檔：
-    - hook-language-classification.yaml
-    - hook-exclude-list.json
-    - settings.json
+    在多個候選路徑中搜尋必須設定檔：
+    - hook-language-classification.yaml: .claude/config/ → .claude/hooks/
+    - hook-exclude-list.json: .claude/config/ → .claude/hooks/
+    - settings.json: .claude/config/ → .claude/
 
     同時驗證 YAML 和 JSON 格式的有效性，並記錄詳細的權限資訊。
 
@@ -838,29 +864,21 @@ def check_hook_configurations(project_root: Path) -> HookConfigurationCheckInfo:
         HookConfigurationCheckInfo: Hook 配置檔檢查結果。
     """
     config_dir = project_root / ".claude" / "config"
+    config_dir_exists = config_dir.exists() and config_dir.is_dir()
 
-    if not config_dir.exists() or not config_dir.is_dir():
-        return HookConfigurationCheckInfo(
-            config_dir_exists=False,
-            has_language_classification_yaml=False,
-            has_exclude_list_json=False,
-            has_settings_json=False,
-            all_required_complete=False,
-            missing_files=[
-                "hook-language-classification.yaml",
-                "hook-exclude-list.json",
-                "settings.json",
-            ],
-        )
+    yaml_file = _find_hook_config_file(
+        project_root, HOOK_CONFIG_YAML,
+        [".claude/config", ".claude/hooks"])
+    json_exclude = _find_hook_config_file(
+        project_root, HOOK_CONFIG_EXCLUDE_JSON,
+        [".claude/config", ".claude/hooks"])
+    json_settings = _find_hook_config_file(
+        project_root, HOOK_CONFIG_SETTINGS_JSON,
+        [".claude/config", ".claude"])
 
-    # 檢查檔案存在
-    yaml_file = config_dir / HOOK_CONFIG_YAML
-    json_exclude = config_dir / HOOK_CONFIG_EXCLUDE_JSON
-    json_settings = config_dir / HOOK_CONFIG_SETTINGS_JSON
-
-    has_yaml = yaml_file.exists()
-    has_exclude = json_exclude.exists()
-    has_settings = json_settings.exists()
+    has_yaml = yaml_file is not None
+    has_exclude = json_exclude is not None
+    has_settings = json_settings is not None
 
     missing_files = []
     if not has_yaml:
@@ -905,7 +923,7 @@ def check_hook_configurations(project_root: Path) -> HookConfigurationCheckInfo:
     all_complete = len(missing_files) == 0 and yaml_valid and json_valid
 
     return HookConfigurationCheckInfo(
-        config_dir_exists=True,
+        config_dir_exists=config_dir_exists,
         has_language_classification_yaml=has_yaml,
         has_exclude_list_json=has_exclude,
         has_settings_json=has_settings,
@@ -1007,7 +1025,7 @@ def check_language_standards(
 ) -> LanguageStandardCheckInfo:
     """檢查語言特定的開發規範文件.
 
-    根據 W1-017 重構，獨立語言規範檔已廢止。所有技術選型和開發規範統一在 CLAUDE.md。
+    獨立語言規範檔已廢止。所有技術選型和開發規範統一在 CLAUDE.md。
     此檢查為 [SHOULD] 優先級（推薦但非必須）。
 
     Args:
