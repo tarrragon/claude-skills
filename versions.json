@@ -70,7 +70,8 @@
     "version": "2.2.0"
   },
   "framework-issue": {
-    "hash": "aa91d81d823ee968a8c0f0ed459db4136d2b6a9ff2c4edf2c96bfba2269b7695"
+    "hash": "288cecfbcef2341c5bbe9bc5e947acfe4d5e5bc41f4fb0228d579b720742bf47",
+    "version": "1.2.0"
   },
   "frontend-with-playwright": {
     "hash": "afca387bdc5c152a0cdc214d9e36365511e49cba61af9ade550163b67fa3c0c4",
