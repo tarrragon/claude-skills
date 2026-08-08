@@ -43,6 +43,9 @@
     "hash": "80cb101a5dc3caa9735c93d0fd3642cd4adf35bf7375d433465d5a9327e461a9",
     "version": "1.0.0"
   },
+  "dart-domain-modeling": {
+    "hash": "8ac62d92a844cb60c05d4d1452c3062ee4b4e460b312d1a5d5cc867d00ba8abb"
+  },
   "dart-i18n-checker": {
     "hash": "c46cf052e01e5db27020278cea9d632eac5af213088857805cabdb5f17a05cfb",
     "version": "1.0.0"
