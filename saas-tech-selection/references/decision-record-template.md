@@ -1,6 +1,8 @@
 # Decision Record Template：設計決策記錄與 scaffold 建議格式
 
-本檔是決策收斂階段（訪談最終站）的產出規格。決策記錄的責任是讓三種讀者各取所需：現在的使用者確認「訪談結論跟我想的一樣」、未來的維護者回答「當初為什麼這樣選」、規模成長時的重評者知道「什麼訊號出現該回來改」。記錄的骨架順序跟訪談一致：操作與風險（BDD）→ domain map 與 event catalog（DDD）→ 技術維度決策 — 技術選型永遠能往上回溯到它服務的操作與領域。scaffold 建議是決策記錄的下游 — 先確認決策、再產生檔案。
+本檔是決策收斂階段（訪談最終站）的產出規格。決策記錄的責任是讓三種讀者各取所需：現在的使用者確認「訪談結論跟我想的一樣」、未來的維護者回答「當初為什麼這樣選」、規模成長時的重評者知道「什麼訊號出現該回來改」。
+
+決策記錄是 **append-only 的時點記錄**：記下產出當時的取捨、標明產出日期、不回改；tripwire 觸發的重評產出新的決策記錄（或追加補記段）、與原記錄並存——讀舊記錄的人拿到的是「當時為什麼這樣選」、不是被期待反映現狀的活文件。記錄的骨架順序跟訪談一致：操作與風險（BDD）→ domain map 與 event catalog（DDD）→ 技術維度決策 — 技術選型永遠能往上回溯到它服務的操作與領域。scaffold 建議是決策記錄的下游 — 先確認決策、再產生檔案。
 
 ---
 
@@ -158,7 +160,7 @@
 
 spec 的 FR 是雙源：§2 Domain Map 給 domain 邊界與責任、§3 技術維度給技術性 FR / NFR — 兩段都要回看、缺一則 spec 不完整。
 
-移交步驟：(1) 先生成 proposal（綁範圍）、(2) 再依 domain map 生成各 spec、(3) 再依操作表生成各 usecase、(4) 補雙向交叉引用（proposal 的 spec_refs / usecase_refs、spec 的 related_usecases、usecase 的 related_specs）、**(5) 推導標記審查**（見下段）、(6) CLAUDE.md 瘦身 — 需求文件結構化落地到 docs/ 後、CLAUDE.md 中的完整技術規格替換為路由索引表（只留決策編號 + 維度 + 選型一行摘要 + 指向 `docs/tech-decisions.md` 的路徑）、auto-load token 隨之下降。doc 端的接手細節見 doc skill 的「與 saas-tech-selection 的銜接」節。doc 產出物進入 TDD 流程時，由 `/tdd start` 自動偵測並執行銜接（見 `.claude/skills/tdd/references/doc-handoff.md`）。
+移交步驟：(1) 先生成 proposal（綁範圍）、(2) 再依 domain map 生成各 spec、(3) 再依操作表生成各 usecase、(4) 補雙向交叉引用（proposal 的 spec_refs / usecase_refs、spec 的 related_usecases、usecase 的 related_specs）、**(5) 推導標記審查**（見下段）、(6) CLAUDE.md 瘦身 — 需求文件結構化落地到 docs/ 後、CLAUDE.md 中的完整技術規格替換為路由索引表（只留決策編號 + 維度 + 選型一行摘要 + 指向 `docs/tech-decisions.md` 的路徑）、auto-load token 隨之下降。doc 端的接手細節見 doc skill 的「與 saas-tech-selection 的銜接」節。
 
 ### 推導標記審查（Step 5）
 
