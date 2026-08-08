@@ -46,20 +46,8 @@
   "dart-domain-modeling": {
     "hash": "8ac62d92a844cb60c05d4d1452c3062ee4b4e460b312d1a5d5cc867d00ba8abb"
   },
-  "dart-i18n-checker": {
-    "hash": "c46cf052e01e5db27020278cea9d632eac5af213088857805cabdb5f17a05cfb",
-    "version": "1.0.0"
-  },
-  "dart-provider-architecture": {
-    "hash": "c394f786dbe92ac1569b293302660980ee2b180de95107f698ddad0fc5d8f7ad",
-    "version": "1.0.0"
-  },
-  "dart-security-review": {
-    "hash": "c5e392d3a8ee4c8b4a008d5cd4fcc428072e496edd96504d802d77877b05f234",
-    "version": "1.0.0"
-  },
   "dart-style-guardian": {
-    "hash": "6b170df40dca4847e3e98fefa885a16eacdf69f89b6cb53ad9bb4536d7a16df9",
+    "hash": "4aef448fec9691592a2f3e7b242dbea216b22a2134002be7d5b260e349d6864d",
     "version": "1.0.0"
   },
   "dart-test-async-guardian": {
