@@ -132,10 +132,7 @@ Environment variable `SKILL_SYNC_REPO` overrides the default repo URL.
 
 | Skill | Description |
 |-------|-------------|
-| `dart-provider-architecture` | Riverpod Provider architecture (Flutter) |
-| `dart-security-review` | Security review (Flutter/Dart) |
 | `dart-test-async-guardian` | Async test management (Flutter/Dart) |
-| `dart-i18n-checker` | Hardcoded string scanning for i18n (Flutter/Dart) |
 | `dart-domain-modeling` | copyWith narrowing and entity invariants (Flutter/Dart) |
 | `saas-tech-selection` | SaaS tech stack selection |
 | `data-extraction` | Web scraping strategy design |
