@@ -125,17 +125,18 @@ Environment variable `SKILL_SYNC_REPO` overrides the default repo URL.
 |-------|-------------|
 | `frontend-with-playwright` | Frontend dev + Playwright verification |
 | `impeccable` | UI/UX design, critique, and polish |
-| `style-guardian` | Design system enforcement |
+| `dart-style-guardian` | Design system enforcement (Flutter/Dart) |
 | `chrome-extension-mcp-debug` | Chrome Extension debug workflow |
 
 ### Platform-Specific
 
 | Skill | Description |
 |-------|-------------|
-| `provider-architecture` | Riverpod Provider architecture (Flutter) |
-| `security-review` | Security review (Flutter/Dart) |
-| `test-async-guardian` | Async test management (Flutter/Dart) |
-| `i18n-checker` | Hardcoded string scanning for i18n |
+| `dart-provider-architecture` | Riverpod Provider architecture (Flutter) |
+| `dart-security-review` | Security review (Flutter/Dart) |
+| `dart-test-async-guardian` | Async test management (Flutter/Dart) |
+| `dart-i18n-checker` | Hardcoded string scanning for i18n (Flutter/Dart) |
+| `dart-domain-modeling` | copyWith narrowing and entity invariants (Flutter/Dart) |
 | `saas-tech-selection` | SaaS tech stack selection |
 | `data-extraction` | Web scraping strategy design |
 | `zellij` | Zellij terminal multiplexer |
