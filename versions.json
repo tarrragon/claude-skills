@@ -37,7 +37,7 @@
   "spec": "1.6.0",
   "startup-check": "1.0.0",
   "style-guardian": "1.0.0",
-  "tdd": "2.1.0",
+  "tdd": "2.2.0",
   "tech-debt-capture": "1.1.0",
   "test-assertion-design": "1.2.0",
   "test-async-guardian": "1.0.0",
