@@ -18,7 +18,7 @@ description: "broken-link 偵測工具。掃描 .claude/ 目錄所有 Markdown �
 
 ## 權威 gate：scan_links.py CLI
 
-broken-link 計數的唯一權威來源是 `scan_links.py` 確定性 CLI，不是 LLM 手動判讀。LLM 手動 Glob/Grep 流程對同一 repo 會產出浮動計數（W8-019 實測 258 vs 155），無法作為跨框架完成 gate。CLI 以固定排除規則與穩定排序保證同一 repo 連續執行 byte-for-byte 一致，因此作為權威 gate。
+broken-link 計數的唯一權威來源是 `scan_links.py` 確定性 CLI，不是 LLM 手動判讀。LLM 手動 Glob/Grep 流程對同一 repo 會產出浮動計數（實測顯示相同專案產出 258 vs 155 的差異），無法作為跨框架完成 gate。CLI 以固定排除規則與穩定排序保證同一 repo 連續執行 byte-for-byte 一致，因此作為權威 gate。
 
 ### 立即掃描（權威）
 
@@ -79,8 +79,8 @@ CLI 已內建以下規則，本節僅供閱讀輸出時對照，非需手動執�
 |------|------|------|
 | `@.claude/path/file.md` | `@.claude/pm-rules/decision-tree.md` | repo root |
 | `.claude/path/file.md` | `.claude/agents/incident-responder.md` | repo root |
-| `../path/file.md` | `../agents/lavender-interface-designer.md` | 引用文件所在目錄 |
-| `./path/file.md` | `./references/detail.md` | 引用文件所在目錄 |
+| `../path/file.md` | `../agents/lavender-interface-designer.md` | 引用文件所在目錄 <!-- broken-link-exempt: 格式示範範例路徑，非真實引用（W2-011 A 類） --> |
+| `./path/file.md` | `./references/detail.md` | 引用文件所在目錄 <!-- broken-link-exempt: 格式示範範例路徑，非真實引用（W2-011 A 類） --> |
 
 排除：`http(s)://`（外部 URL）、`#section`（錨點）、預設四旋鈕涵蓋的程式碼區塊 / 備份目錄 / placeholder 範例 / documented-error marker 行。
 
