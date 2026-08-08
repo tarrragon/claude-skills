@@ -689,7 +689,7 @@ _validate_create_checklist = validate_create_checklist
 
 
 def _suggest_field_value(field: str, ticket_type: str, action: str) -> str | None:
-    """根據 ticket_type + action 推導缺失欄位的建議值（0.3.4-W2-001）。"""
+    """根據 ticket_type + action 推導缺失欄位的建議值。"""
     suggestions: dict[str, dict[str, str | None]] = {
         "who": {
             "ANA": "主線程",
@@ -933,6 +933,32 @@ def _persist_and_report(
     ticket = _build_and_save_ticket(version, ticket_id, config)
     ticket_path = str(get_ticket_path(version, ticket_id))
 
+    # 0.2.1-W3-273：create 落盤後 auto-commit 新 ticket md，與 append-log/
+    # set-acceptance 同保護等級（W7-001 家族）。根因：worktree 內 create 產出的
+    # ticket md 若停留 untracked，`git diff`/`git diff --staged` 皆偵測不到，
+    # 分支合併不會帶入該檔案的任何內容（merge 只作用於已 commit 的物件，
+    # 未 commit 的 index/working tree 狀態不隨 merge 傳遞），`git worktree
+    # remove --force` 會連同該 worktree 目錄整個丟棄——「先 git add 再等下次
+    # append-log 補 commit」不足以防護：force 移除不看 staged 與否，只看
+    # committed 與否。故直接複用 _auto_commit_ticket_md 完整 add+commit，
+    # 不僅 add（見 Solution 決策記錄）。
+    # graceful degrade：非 git repo / index.lock 競爭 / commit 失敗 → create
+    # 仍 exit 0 + stderr 警告，body 已由 save_ticket 落於 working tree。
+    from ticket_system.lib import git_utils
+    try:
+        commit_status = git_utils._auto_commit_ticket_md(
+            ticket_path, ticket_id, "Task Summary", operation="create",
+        )
+        if commit_status in ("not_git_repo", "git_failed"):
+            sys.stderr.write(
+                f"[create] auto-commit skipped（{commit_status}，非致命）；"
+                f"ticket md 已保留 working tree，可手動 git commit 持久化。\n"
+            )
+    except Exception as exc:
+        sys.stderr.write(
+            f"[create] auto-commit 失敗（非致命，ticket md 已保留 working tree）：{exc}\n"
+        )
+
     # 步驟 3：更新關係
     parent_info = _update_parent_and_get_parent_info(args, version, ticket_id)
 
@@ -1053,7 +1079,8 @@ def _auto_extract_context_bundle_post_create(
     僅當 target ticket 具備 source_ticket / blocked_by / related_to 之一時才觸發。
     異常降級：任何例外都寫入 stderr traceback，退出碼保 0（主流程不阻斷）。
 
-    設計依據：W17-002 Phase 1 §5.1 create-insert 虛擬碼 + §v2.3 Non-raising。
+    設計依據：create-insert 虛擬碼規格；驗證失敗採 Non-raising（降級不拋錯，
+    主流程不因 Context Bundle 抽取失敗而中斷）。
     """
     try:
         from ticket_system.lib.context_bundle_extractor import (

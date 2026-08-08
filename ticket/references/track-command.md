@@ -37,13 +37,13 @@
 # 可用 section：Problem Analysis / Context Bundle / Solution / Test Results / Execution Log
 /ticket track log <id> --section "<Section Name>"
 
-# 列出 Tickets（W10-115：預設 --top 10 by priority；詳見「track list 子命令」）
+# 列出 Tickets（預設 --top 10 by priority；詳見「track list 子命令」）
 /ticket track list [--pending|--in-progress|--completed|--blocked] \
                    [--wave <wave>] [--status STATUS [STATUS ...]] \
                    [--format {table,ids,yaml}] [--top N] [--all] \
                    [--version VERSION]
 
-# Dashboard 聚合視圖（W10-114：PM 接手新 session；詳見「track dashboard 子命令」）
+# Dashboard 聚合視圖（PM 接手新 session；詳見「track dashboard 子命令」）
 /ticket track dashboard [--top N] [--wave N] [--no-stale] \
                         [--stale-threshold MIN] [--format {text,json}] \
                         [--version V]
@@ -421,20 +421,21 @@ Hook 偵測到此標記即視為已套用統一格式，**跳過重複補充**�
 grep -n "__error_envelope_v1__" .claude/skills/ticket/ticket_system/
 ```
 
-#### Hook 端跳過機制（`.claude/hooks/skill-cli-error-feedback-hook.py`）
+#### Hook 端跳過機制（`.claude/skills/ticket/hooks/cli-error-feedback-hook.py`）
 
 Hook 在 PostToolUse 攔截 `ticket track` 系列命令的 stderr/stdout，若偵測到 `__error_envelope_v1__` 標記即直接放行，不再附加中文修復引導，避免「argparse 英文 + Hook 中文 markdown」雙軌訊息互相重疊：
 
 ```python
-# .claude/hooks/skill-cli-error-feedback-hook.py（節錄）
+# .claude/skills/ticket/hooks/cli-error-feedback-hook.py（節錄；
+# 原 skill-cli-error-feedback-hook.py 已於 0.0.1-W1-005 合併刪除）
 ENVELOPE_VERSION_MARKER = "__error_envelope_v1__"
 
 def is_envelope_output(stderr: str, stdout: str) -> bool:
     return ENVELOPE_VERSION_MARKER in (stderr or "") or ENVELOPE_VERSION_MARKER in (stdout or "")
 
-# main() 內：
+# check_skill_cli_error() 內：
 if is_envelope_output(stderr, stdout):
-    return EXIT_SUCCESS  # 已是結構化訊息，跳過 hook 補充
+    return None  # 已是結構化訊息，跳過 hook 補充
 ```
 
 **設計後果**：

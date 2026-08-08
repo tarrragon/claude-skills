@@ -23,6 +23,8 @@ Acceptance Gate Hook - 驗收流程完整引導（Orchestrator）
 - 5W1H 完整性
 - Execution log 填寫
 - 同 Wave pending sibling tickets（場景 #9）
+- Ticket 規模（C1 移植，0.2.1-W3-052.1，警告不阻擋）
+- 檔案範圍職責邊界（C3 移植，0.2.1-W3-052.1，警告不阻擋）
 
 Exit Code：
 - 0 (EXIT_SUCCESS): 命令允許執行
@@ -85,6 +87,8 @@ from acceptance_checkers import (
     check_ana_spawn_consistency,
     check_spawn_requests,
     check_phase4_review_evidence,
+    check_god_ticket_scale,
+    check_file_scope_diversity,
 )
 # W17-120.2 / PC-091: ana_spawned_checker 退場
 # ANA complete 阻擋判斷統一收斂到 children_checker（PC-091 路線：
@@ -134,6 +138,10 @@ class AcceptanceCheckResult(NamedTuple):
     self_check_warning: Optional[str] = None
     # W1-080.1：Phase 4 審查證據 warning（IMP 缺 Phase 4 證據時非 None，warning 不阻擋）
     phase4_review_warning: Optional[str] = None
+    # 0.2.1-W3-052.1：規模判準（C1 移植）違規清單，warning 不阻擋
+    god_ticket_scale_violations: List[str] = []
+    # 0.2.1-W3-052.1：職責邊界判準（C3 移植）違規清單，warning 不阻擋
+    responsibility_scope_violations: List[str] = []
     # 0.4.1-W2-006：complete 與 git merge / set-acceptance / append-log 等寫入操作
     # 串接於同一 Bash 呼叫時為 True，代表 acceptance / execution log 檢查因讀檔
     # 時序早於同鏈操作執行而略過（避免滯後誤報，見 detect_chained_pre_complete_write）
@@ -176,6 +184,23 @@ CUSTOM_H2_WARNING = (
 # 此處不另定義模板，warning 字串透過 `check_self_check_visibility` 回傳。
 
 
+# 0.2.1-W3-052.1：規模判準警告訊息模板（C1 God Ticket 移植）
+GOD_TICKET_SCALE_WARNING = (
+    "[WARNING] Ticket 規模偏大（0.2.1-W3-052.1）\n"
+    "本 Ticket 的 where.files 檔案數已超過建議拆分閾值：\n"
+    "{violation_list}\n"
+    "建議：依 `.claude/rules/core/cognitive-load.md` 任務拆分閾值評估是否拆分為子 Ticket。"
+)
+
+# 0.2.1-W3-052.1：職責邊界警告訊息模板（C3 Ambiguous Responsibility 移植）
+RESPONSIBILITY_SCOPE_WARNING = (
+    "[WARNING] Ticket 檔案範圍跨越多個 domain（0.2.1-W3-052.1）\n"
+    "本 Ticket 的 where.files 涵蓋的頂層路徑 domain 數已超過建議閾值：\n"
+    "{violation_list}\n"
+    "建議：確認是否屬單一職責，或依 domain 拆分為子 Ticket。"
+)
+
+
 # 0.4.1-W2-006：滯後讀檔誤報提示訊息模板
 # 對應 0.4.0-W3-006（merge 與 complete 同鏈）/ 0.4.1-W1-001（set-acceptance +
 # append-log 與 complete 同鏈）兩起實證：PreToolUse Hook 在整個 Bash 命令字串
@@ -194,12 +219,28 @@ CHAINED_WRITE_INFO_NOTE = (
 # 命令識別
 # ============================================================================
 
+def _strip_quoted_spans(command: str) -> str:
+    """移除命令字串中單/雙引號包住的內容（0.2.1-W3-020）。
+
+    `ticket track create` 常帶 `--why "..."` 等長文字參數，內容可能引用
+    「ticket track complete」字面（例如描述本 Hook 行為的 why 文字）。
+    is_complete_command 若直接對整串命令做子字串比對，會把這段引號內文字
+    誤判為真正的 complete 呼叫，導致 create 命令被連帶擋下，形成死鎖
+    （PM 於 0.2.1-W3-016 / 0.2.1-W3-019 兩度實證）。
+
+    移除引號內容後再比對，可保留「真正的 complete 呼叫」偵測能力
+    （不在引號內，仍會被找到），只排除引號內的字面引用。
+    """
+    return re.sub(r'"[^"]*"|\'[^\']*\'', "", command)
+
+
 def extract_ticket_id_from_command(command: str, logger) -> Optional[str]:
     """從命令中提取 Ticket ID"""
-    if "ticket track complete" not in command and "ticket track batch-complete" not in command:
+    stripped = _strip_quoted_spans(command)
+    if "ticket track complete" not in stripped and "ticket track batch-complete" not in stripped:
         return None
 
-    match = re.search(TICKET_ID_PATTERN, command)
+    match = re.search(TICKET_ID_PATTERN, stripped)
     if match:
         ticket_id = match.group(0)
         logger.info(f"從命令中提取 Ticket ID: {ticket_id}")
@@ -210,8 +251,12 @@ def extract_ticket_id_from_command(command: str, logger) -> Optional[str]:
 
 
 def is_complete_command(command: str) -> bool:
-    """判斷是否為 ticket track complete 命令"""
-    return "ticket track complete" in command or "ticket track batch-complete" in command
+    """判斷是否為 ticket track complete 命令
+
+    引號內文字（如 --why 參數的字面引用）不列入判斷，見 _strip_quoted_spans。
+    """
+    stripped = _strip_quoted_spans(command)
+    return "ticket track complete" in stripped or "ticket track batch-complete" in stripped
 
 
 # 0.4.1-W2-006：complete 前段串接後可能改變驗收狀態的寫入操作。
@@ -429,6 +474,12 @@ def check_acceptance_status(
             content, frontmatter.get("type", ""), logger
         )
 
+        # 步驟 10：檢查規模判準（0.2.1-W3-052.1，C1 移植，warning 不阻擋）
+        god_ticket_scale_violations = check_god_ticket_scale(frontmatter, logger)
+
+        # 步驟 11：檢查職責邊界判準（0.2.1-W3-052.1，C3 移植，warning 不阻擋）
+        responsibility_scope_violations = check_file_scope_diversity(frontmatter, logger)
+
         task_type = frontmatter.get("type", "")
         priority = frontmatter.get("priority", "")
 
@@ -450,6 +501,8 @@ def check_acceptance_status(
             self_check_warning=self_check_warning,
             phase4_review_warning=phase4_warning,
             chained_write_detected=chained_write_detected,
+            god_ticket_scale_violations=god_ticket_scale_violations,
+            responsibility_scope_violations=responsibility_scope_violations,
         )
 
     except Exception as e:
@@ -568,6 +621,22 @@ def generate_hook_output(
     else:
         checklist_items.append("[--] 9. Phase 4 審查(非 IMP，不適用)")
 
+    # 項目 10: 規模判準（0.2.1-W3-052.1，C1 移植，僅對 IMP/ADJ 顯示，ANA/DOC 豁免）
+    if ticket_type_upper_for_checklist in ("ANA", "DOC"):
+        checklist_items.append("[--] 10. 規模判準(ANA/DOC，不適用)")
+    elif check_result.god_ticket_scale_violations:
+        checklist_items.append("[WARNING] 10. Ticket 規模偏大（建議評估拆分）")
+    else:
+        checklist_items.append("[x] 10. Ticket 規模在建議範圍內")
+
+    # 項目 11: 職責邊界判準（0.2.1-W3-052.1，C3 移植，僅對 IMP/ADJ 顯示，ANA/DOC 豁免）
+    if ticket_type_upper_for_checklist in ("ANA", "DOC"):
+        checklist_items.append("[--] 11. 職責邊界判準(ANA/DOC，不適用)")
+    elif check_result.responsibility_scope_violations:
+        checklist_items.append("[WARNING] 11. 檔案範圍跨越多個 domain（建議確認職責邊界）")
+    else:
+        checklist_items.append("[x] 11. 檔案範圍 domain 分散度在建議範圍內")
+
     checklist_text = "[Complete 清單]\n" + "\n".join(checklist_items)
     context_parts.append(checklist_text)
 
@@ -626,6 +695,30 @@ def generate_hook_output(
     if check_result.phase4_review_warning:
         context_parts.append(check_result.phase4_review_warning)
         logger.info("新增 Phase 4 審查證據 warning")
+
+    # 優先級 2.9：規模判準 warning（0.2.1-W3-052.1，C1 移植，WARNING 不阻擋）
+    if check_result.god_ticket_scale_violations:
+        violation_list_formatted = "\n".join(
+            f"  - {v}" for v in check_result.god_ticket_scale_violations
+        )
+        context_parts.append(
+            GOD_TICKET_SCALE_WARNING.format(violation_list=violation_list_formatted)
+        )
+        logger.info(
+            f"新增規模判準 warning，違規數量: {len(check_result.god_ticket_scale_violations)}"
+        )
+
+    # 優先級 2.10：職責邊界判準 warning（0.2.1-W3-052.1，C3 移植，WARNING 不阻擋）
+    if check_result.responsibility_scope_violations:
+        scope_violation_list_formatted = "\n".join(
+            f"  - {v}" for v in check_result.responsibility_scope_violations
+        )
+        context_parts.append(
+            RESPONSIBILITY_SCOPE_WARNING.format(violation_list=scope_violation_list_formatted)
+        )
+        logger.info(
+            f"新增職責邊界判準 warning，違規數量: {len(check_result.responsibility_scope_violations)}"
+        )
 
     # 優先級 3：Handoff 方向選擇 場景 #9（無訊息時，sibling >= 2）
     if (
@@ -745,26 +838,32 @@ def main() -> int:
         # 步驟 1: 解析驗證輸入
         input_data = read_json_from_stdin(logger)
 
-        # Effort 感知（v2.1.133+，W14-034）：low effort 短路放行
-        effort = get_effort_level(input_data)
-        if effort == "low":
-            logger.info("effort=low，acceptance-gate 短路放行")
-            _output_allow_json()
-            return EXIT_SUCCESS
-        logger.info("effort=%s，執行完整 acceptance 驗證", effort)
-
         # 降級 fast-path（W10-047.1）：
         # ANA W10-035.3 觀察 3d 觸發 1667 次僅 36 Action（2.2%）。
         # 在執行 subagent 偵測 / 完整輸入驗證 / Ticket 提取 / 驗收檢查等
         # 重操作前，先以最低成本判斷命令是否為 ticket track complete；
         # 不是即直接放行，避免每次 Bash 命令都跑完整流程。
+        # 此判斷必須先於 effort 短路（0.2.1-W3-018）：effort=low 不可豁免
+        # complete 命令的驗收檢查，否則 acceptance-gate 形同虛設
+        # （0.2.1-W3-014 實證：非法 multi_view_status 值藉此成功 complete）。
+        _fp_is_complete = False
         if input_data is not None:
             _fp_tool_input = input_data.get("tool_input") or {}
             _fp_command = _fp_tool_input.get("command", "") if isinstance(_fp_tool_input, dict) else ""
-            if input_data.get("tool_name") != "Bash" or not is_complete_command(_fp_command):
+            _fp_is_complete = (
+                input_data.get("tool_name") == "Bash" and is_complete_command(_fp_command)
+            )
+            if not _fp_is_complete:
                 logger.debug("Fast-path skip: 非 ticket track complete 命令")
                 _output_allow_json()
                 return EXIT_SUCCESS
+
+        # Effort 感知（v2.1.133+，W14-034）：僅記錄 effort 供除錯，
+        # 不再作為短路放行條件（0.2.1-W3-018）。此處已確定為
+        # ticket track complete 命令（上方 fast-path 保證），故一律
+        # 執行完整驗收檢查，effort=low 不豁免。
+        effort = get_effort_level(input_data)
+        logger.info("effort=%s，命令為 complete，執行完整 acceptance 驗證", effort)
 
         if is_subagent_environment(input_data):
             logger.info("偵測到 subagent 環境（agent_id=%s），跳過 AskUserQuestion 提醒", input_data.get("agent_id"))

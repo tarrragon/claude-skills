@@ -34,6 +34,7 @@ ARCH-020 同構雙寫風險：
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional, Set
@@ -87,6 +88,7 @@ HANDOFF_KEYWORDS = (
     "接手指引",
     "Handoff Context",
     "Session Handoff",
+    "下一站",
     # 建議式
     "下 session 優先建議",
     "下個 session 優先建議",
@@ -98,6 +100,8 @@ HANDOFF_KEYWORDS = (
     "未完成清單",
     "Spawned 推進清單",
 )
+# 0.2.1-W3-218 補「下一站」（本專案書寫慣例）。SOT-mirror，同步理由見
+# worklog_parser.py:HANDOFF_KEYWORDS docstring。
 
 TICKET_ID_FULL_PATTERN = re.compile(
     r"\b(\d+\.\d+\.\d+)-(W\d+-[\d\w]+(?:\.\d+)?)\b"
@@ -118,44 +122,81 @@ def _detect_handoff_keywords(content: str) -> bool:
     return any(kw in content for kw in HANDOFF_KEYWORDS)
 
 
+# 行首錨定容許前綴：關鍵字前只能有 '#' / '*' / 空白，排除句中出現
+# （0.2.1-W3-294 根因 1：rfind 未錨定行首，命中自指語料的歷史分析行）
+_ANCHOR_PREFIX_PATTERN = re.compile(r"^[#*\s]*$")
+_TITLE_LINE_PATTERN = re.compile(r"^#{1,6}\s")
+_INLINE_LIST_END_PATTERN = re.compile(r"^- ", re.MULTILINE)
+_INLINE_BOLD_END_PATTERN = re.compile(r"^\*\*", re.MULTILINE)
+
+
+def _iter_anchored_keyword_hits(content: str):
+    """找出所有「行首錨定」的 HANDOFF_KEYWORDS 命中位置（SOT-mirror）。"""
+    for kw in HANDOFF_KEYWORDS:
+        start = 0
+        while True:
+            idx = content.find(kw, start)
+            if idx < 0:
+                break
+            line_start = content.rfind("\n", 0, idx) + 1
+            prefix = content[line_start:idx]
+            if _ANCHOR_PREFIX_PATTERN.match(prefix):
+                yield idx, line_start
+            start = idx + 1
+
+
 def _extract_handoff_section(content: str) -> str:
-    """從 worklog 內容切出 handoff 相關段落（SOT-mirror）。
+    """從 worklog 內容切出 handoff 相關段落（SOT-mirror，0.2.1-W3-294 重設計）。
 
-    策略：找到 **最後一個** HANDOFF_KEYWORDS 命中位置（rfind 取最大 idx），
-    回傳該位置至下一個 H1/H2 標題前的內容；若找不到下一個標題則回傳到 EOF。
-    無關鍵字命中回 ""。
-
-    使用 rfind 取最後位置的理由（W17-176）：
-    worklog 累積多 session 的歷史 handoff 段落（H3 ### 分隔，無法被 H1/H2 切斷），
-    若取最早關鍵字會擷取整份歷史 handoff（測量值：49K chars / 283 IDs / ~12 false
-    positive）。取最後一個對應「當前 session 寫入的 handoff」，符合本函式「找出本
-    session 寫了什麼 handoff」的呼叫意圖。
+    策略：只採「行首錨定」的關鍵字命中（關鍵字前僅允許 '#' / '*' / 空白），
+    取最後一個（idx 最大）；依關鍵字所在行的形態分派終點界定——標題式
+    （`^#{1,6}\\s`）取下一個 H1/H2，行內式取下一個空行 / 行首條列 `- ` /
+    `**` 起始行三者取最先。無行首錨定命中回 ""。
 
     SOT: .claude/skills/ticket/ticket_system/lib/worklog_parser.py:extract_handoff_section
-    任一處更新需同步另一處（ARCH-020）。
+    任一處更新需同步另一處（ARCH-020）。本函式邏輯（S1 段落界定）與 SOT 完全
+    一致；hook 端另有 S2 session 增量前置過濾（見 `_extract_session_incremental_content`），
+    是呼叫本函式「前」的獨有前處理，非本函式職責差異——CLI --from-worklog 等
+    其他呼叫端無 session 概念，不套用該前置過濾，直接以全文呼叫本函式（與 SOT
+    docstring 一致）。
+
     用於 detect_sync_drift 將 ticket ID 掃描範圍限制在 handoff 段落，避免從整個
     worklog 抓到歷史 ticket 造成 false positive（W17-155 ANA / W17-156 修復）。
     """
     if not content:
         return ""
 
-    latest_idx = -1
-    for kw in HANDOFF_KEYWORDS:
-        idx = content.rfind(kw)
-        if idx > latest_idx:
-            latest_idx = idx
-
-    if latest_idx < 0:
+    hits = list(_iter_anchored_keyword_hits(content))
+    if not hits:
         return ""
 
-    line_start = content.rfind("\n", 0, latest_idx) + 1
+    latest_idx, line_start = max(hits, key=lambda h: h[0])
 
-    section_end_pattern = re.compile(r"^(# |## )", re.MULTILINE)
-    search_from = latest_idx + 1
-    next_match = section_end_pattern.search(content, search_from)
+    line_end = content.find("\n", latest_idx)
+    if line_end == -1:
+        line_end = len(content)
+    line_text = content[line_start:line_end]
 
-    if next_match:
-        return content[line_start : next_match.start()]
+    if _TITLE_LINE_PATTERN.match(line_text):
+        section_end_pattern = re.compile(r"^(# |## )", re.MULTILINE)
+        next_match = section_end_pattern.search(content, latest_idx + 1)
+        if next_match:
+            return content[line_start : next_match.start()]
+        return content[line_start:]
+
+    candidates = []
+    blank_idx = content.find("\n\n", line_end)
+    if blank_idx != -1:
+        candidates.append(blank_idx)
+    list_match = _INLINE_LIST_END_PATTERN.search(content, line_end)
+    if list_match:
+        candidates.append(list_match.start())
+    bold_match = _INLINE_BOLD_END_PATTERN.search(content, line_end)
+    if bold_match:
+        candidates.append(bold_match.start())
+
+    if candidates:
+        return content[line_start : min(candidates)]
     return content[line_start:]
 
 
@@ -446,6 +487,267 @@ def _has_in_progress_ticket(project_root: Path, version: str, logger) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# S2：session 增量前置過濾（0.2.1-W3-294，僅 hook 端適用）
+# ---------------------------------------------------------------------------
+
+
+def _resolve_git_base_commit(project_root: Path, session_start: float, logger) -> Optional[str]:
+    """找出 session_start 之前最近一個 commit（作 git diff 的 base）。
+
+    fail-open：git 不可用 / 非 git repo / subprocess 失敗 → 回 None。
+    """
+    since_iso = datetime.fromtimestamp(session_start).isoformat()
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(project_root),
+                "rev-list",
+                "-1",
+                f"--before={since_iso}",
+                "HEAD",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception as e:
+        logger.debug("S2 git rev-list 失敗（fail-open 全文）: %s", e)
+        return None
+    if result.returncode != 0:
+        logger.debug("S2 git rev-list 非零 exit（fail-open 全文）: %s", result.stderr)
+        return None
+    base = result.stdout.strip()
+    return base or None
+
+
+def _extract_session_incremental_content(
+    project_root: Path, worklog_path: Path, session_start: float, logger
+) -> Optional[str]:
+    """S2：以 git diff 界定本 session 新增的 worklog 內容（僅 hook 端適用）。
+
+    Why：關鍵字定位法在自指語料必然失效（根因 1/2），但將掃描範圍先限縮到
+    本 session 實際新增的文字，可從源頭排除歷史交接段落，與 S1 段落界定
+    互補（S1 處理增量內若仍混有雜訊的界定，S2 處理跨 session 歷史雜訊）。
+
+    Consequence：不做此前置過濾時，即使 S1 修好行首錨定，仍可能命中「本
+    session 未寫但歷史仍存在」的行內式交接段落（如上個 session 遺留、尚未
+    被下一個 H1/H2 或空行截斷的舊交接行），造成非本 session 中斷卻誤報。
+
+    Action：base 取 session_start 前最近 commit，diff 取新增（`+`）行還原
+    為純文字。任一步驟失敗（git 不可用 / base 為空 / subprocess 例外 /
+    session_start<=0）回 None，caller 須 fallback 至全文讀取（維持修復前
+    行為，不因本強化而破壞既有 fail-open 承諾）。
+
+    CLI --from-worklog 無 session 概念，不套用本函式（S3 語意差異，見
+    `_extract_handoff_section` docstring 與 SOT `extract_handoff_section`
+    docstring 的 S2 差異說明段落）。
+    """
+    if session_start <= 0:
+        return None
+    base = _resolve_git_base_commit(project_root, session_start, logger)
+    if not base:
+        return None
+    try:
+        rel_path = worklog_path.relative_to(project_root)
+    except ValueError:
+        rel_path = worklog_path
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(project_root),
+                "diff",
+                "--unified=0",
+                base,
+                "--",
+                str(rel_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception as e:
+        logger.debug("S2 git diff 失敗（fail-open 全文）: %s", e)
+        return None
+    if result.returncode != 0:
+        logger.debug("S2 git diff 非零 exit（fail-open 全文）: %s", result.stderr)
+        return None
+
+    added_lines = [
+        line[1:]
+        for line in result.stdout.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    ]
+    return "\n".join(added_lines)
+
+
+# ---------------------------------------------------------------------------
+# 第 7 格偵測：雙軌皆空但 session 有交接訊號（0.2.1-W3-219）
+# 來源票 0.2.1-W3-178「可用偵測訊號與誤報風險」：S3 閘門 + S1 主訊號 + S4 反向濾除。
+# S2（commit body）/ S5（Context Bundle diff）列為後續增強，本函式不實作。
+# ---------------------------------------------------------------------------
+
+_COMMIT_CHORE_PREFIX = "chore("
+_COMMIT_HANDOFF_KEYWORD = "交接"
+
+
+def _iso_to_epoch(value: Optional[str]) -> Optional[float]:
+    """ISO 時間字串轉 epoch 秒，解析失敗回 None（fail-open）。"""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value)).timestamp()
+    except Exception:
+        return None
+
+
+def _get_session_active_tickets(
+    project_root: Path, version: str, session_start: float, logger
+) -> list[str]:
+    """S3 閘門：找出 `started_at` / `completed_at` 落在 `session_start` 之後的
+    ticket，代表本 session 有實質 ticket 活動（來源票 W3-178 訊號表 S3 列）。
+
+    只證明「有活動」不指向交接目標本身，故僅作前置條件，非交接訊號本身。
+    回傳 ticket id 清單，依 timestamp 新到舊排序（第一項作為建議的
+    `--from-ticket-id`）。
+    """
+    if session_start <= 0:
+        return []
+    try:
+        ticket_files = scan_ticket_files_by_version(project_root, version, logger)
+    except Exception as e:
+        logger.debug("S3 掃描 ticket 檔案失敗: %s", e)
+        return []
+
+    active: list[tuple[float, str]] = []
+    for ticket_path in ticket_files:
+        try:
+            fm = parse_ticket_frontmatter(ticket_path, logger)
+        except Exception:
+            continue
+        if not fm:
+            continue
+        ticket_id = fm.get("id") or ticket_path.stem
+        for field in ("completed_at", "started_at"):
+            ts = _iso_to_epoch(fm.get(field))
+            if ts is not None and ts >= session_start:
+                active.append((ts, str(ticket_id)))
+                break
+    active.sort(key=lambda item: item[0], reverse=True)
+    return [ticket_id for _, ticket_id in active]
+
+
+def _detect_handoff_commit_signal(
+    project_root: Path, session_start: float, logger
+) -> list[str]:
+    """S1 主訊號 + S4 反向濾除：掃 session 時間窗內 commit subject 的交接語意。
+
+    來源票 W3-178 E4 實測：近 9 天 1035 個 commit 中 subject 命中交接語意僅 5 次
+    （0.5%），786 筆（75.9%）為 `chore(` 前綴的 append-log auto-commit 噪音，
+    須先濾除否則訊號被淹沒。回傳命中的 commit subject 清單，無命中回空 list。
+    """
+    if session_start <= 0:
+        return []
+    since_iso = datetime.fromtimestamp(session_start).isoformat()
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(project_root),
+                "log",
+                f"--since={since_iso}",
+                "--pretty=format:%s",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception as e:
+        logger.debug("S1 git log 掃描失敗: %s", e)
+        return []
+    if result.returncode != 0:
+        logger.debug("S1 git log 非零 exit: %s", result.stderr)
+        return []
+
+    hits: list[str] = []
+    for subject in result.stdout.splitlines():
+        subject = subject.strip()
+        if not subject:
+            continue
+        if subject.startswith(_COMMIT_CHORE_PREFIX):
+            continue
+        if _COMMIT_HANDOFF_KEYWORD in subject:
+            hits.append(subject)
+    return hits
+
+
+def _format_dual_empty_warning(
+    source_id: str, target_ids: list[str], commit_hits: list[str]
+) -> str:
+    """格式化第 7 格警告輸出：worklog 與 pending 雙軌皆空，但 commit 有交接語意。"""
+    lines: list[str] = []
+    lines.append("=" * 40)
+    lines.append("[Worklog-CLI Handoff Sync Check] 雙軌皆空但偵測到交接訊號")
+    lines.append("=" * 40)
+    lines.append("")
+    lines.append("worklog 無交接段、.claude/handoff/pending/ 亦無 JSON，")
+    lines.append("但本 session 的 commit 訊息含交接語意：")
+    lines.append("")
+    for subject in commit_hits:
+        lines.append(f"  - {subject}")
+    lines.append("")
+    lines.append("建議執行：")
+    if target_ids:
+        for tid in target_ids:
+            lines.append(f"  ticket handoff --next {tid} --from-ticket-id {source_id}")
+    else:
+        lines.append(
+            f"  ticket handoff --next <target-id> --from-ticket-id {source_id}"
+            "  # <target-id> 請換成實際下一站 ticket"
+        )
+    lines.append("")
+    lines.append(
+        "（0.2.1-W3-178 8 格矩陣第 7 格；session-switching-sop.md"
+        "「Worklog 交接與 CLI handoff 同步」強制規則）"
+    )
+    return "\n".join(lines)
+
+
+def _check_dual_empty_handoff_signal(
+    project_root: Path, version: str, session_start: float, logger
+) -> Optional[str]:
+    """第 7 格偵測主流程：S3 閘門 -> S1 訊號（已內含 S4 濾除）-> 輸出建議命令。
+
+    任一階段無命中即靜默回 None，維持第 8 格（確實無交接）不受影響。
+    """
+    active_tickets = _get_session_active_tickets(project_root, version, session_start, logger)
+    if not active_tickets:
+        logger.debug("S3 閘門未命中（session 無 ticket 活動），跳過第 7 格偵測")
+        return None
+
+    commit_hits = _detect_handoff_commit_signal(project_root, session_start, logger)
+    if not commit_hits:
+        logger.debug("S1 未命中交接語意 commit，跳過第 7 格偵測")
+        return None
+
+    source_id = active_tickets[0]
+    target_ids: list[str] = []
+    for subject in commit_hits:
+        for tid in _extract_ticket_ids(subject, active_version=version):
+            if tid not in target_ids:
+                target_ids.append(tid)
+
+    return _format_dual_empty_warning(source_id, target_ids, commit_hits)
+
+
+# ---------------------------------------------------------------------------
 # 主邏輯
 # ---------------------------------------------------------------------------
 
@@ -528,23 +830,35 @@ def detect_sync_drift(
         logger.debug("worklog 不存在: %s", worklog_path)
         return None
 
-    # mtime 過濾：本 session 未動 worklog → 不檢查
+    # mtime 過濾：本 session 未動 worklog → worklog 軌恆為「無交接段」（A=無）。
+    # 0.2.1-W3-219：此情形若 pending 亦空，正是第 7 格候選，須檢查交接訊號
+    # 而非直接靜默；pending 非空則維持既有 orphan 邏輯範圍外的靜默（非本票範圍）。
     if session_start > 0 and worklog_path.stat().st_mtime < session_start:
-        logger.debug("worklog mtime 早於 session_start，跳過")
-        return None
+        logger.debug("worklog mtime 早於 session_start，跳過關鍵字偵測")
+        if _scan_pending_dir(project_root):
+            return None
+        return _check_dual_empty_handoff_signal(project_root, version, session_start, logger)
 
     try:
-        content = worklog_path.read_text(encoding="utf-8")
+        full_content = worklog_path.read_text(encoding="utf-8")
     except Exception as e:
         logger.warning("讀取 worklog 失敗: %s", e)
         return None
 
+    # S2：優先以 session 增量內容偵測（縮小掃描範圍排除跨 session 歷史雜訊）；
+    # 無法界定增量時 fail-open 回退全文（維持修復前行為）
+    incremental_content = _extract_session_incremental_content(
+        project_root, worklog_path, session_start, logger
+    )
+    content = incremental_content if incremental_content is not None else full_content
+
     pending_ids = _scan_pending_dir(project_root)
     has_keywords = _detect_handoff_keywords(content)
 
-    # 雙軌皆無 → 不輸出
+    # 雙軌皆無 → 檢查第 7 格訊號（S3 閘門 + S1 主訊號 + S4 反向濾除，0.2.1-W3-219）；
+    # 無交接訊號時仍靜默（第 8 格：確實無交接）
     if not has_keywords and not pending_ids:
-        return None
+        return _check_dual_empty_handoff_signal(project_root, version, session_start, logger)
 
     # W17-156: 只掃 handoff 段落而非整份 worklog，避免抓到歷史 ticket 造成 false positive
     if has_keywords:

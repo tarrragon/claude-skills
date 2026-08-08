@@ -21,10 +21,11 @@ allowed-tools: Bash(ticket *), Read, Write, Edit, Grep, Glob
 | agent = CI runner | ephemeral runner | 身份在派發/認領時綁定（`claim --as`）、工作區以隔離 checkout 為優先、逾時由 watchdog 回收 |
 | wave = batch cohort | job queue 批次 | blockedBy DAG 之外的隱式排序層 |
 
-**兩個與 OS process 直覺相反的預設**（設計回顧確認：誤用 process 直覺是共享樹競態與身份回填缺口兩類歷史事故的共同根因）：
+**三個與 OS process 直覺相反的預設**（設計回顧確認：誤用 process 直覺是共享樹競態與身份回填缺口兩類歷史事故的共同根因）：
 
 1. **身份晚綁定**：ticket 建立時不知道執行者（submit 與 assign 分離）；身份在 claim 時以 `--as` 綁定，不是 fork 即繼承。
 2. **共享工作區**：agent 預設共享 working tree（thread 語意）而非 process 隔離；檔案變更型派發應優先採 feat branch / worktree 隔離。
+3. **type 與 instance 一對多**：agent 類型（能執行某類任務的角色，如「能做 IMP 的類型」）與執行體（實際在跑的 process）不是一對一，同一類型可同時 spawn 多個獨立執行體；「該類型只有一種」不等於「同時只能跑一個」。**反向風險**：誤讀為可無限開執行體同樣危險，真正的並行上限來自三項約束——共享 git index 的寫入競爭、主線程自身序列化的驗收與建票工作、單一執行體 context 隨任務數累積而飽和，而非類型數。
 
 > scheduler 層類比（runqueue/dashboard 對應 Linux schedule()/top）仍然準確，保留使用。
 
@@ -157,7 +158,7 @@ ticket create --version 0.31.0 --wave 4 --action "實作" --target "XXX"  # 建�
 | `track depth`       | 查詢嵌套深度與 can_descend（W1-056.8，沿 parent_id 鏈） | `ticket track depth 1.0.0-W1-056.5`                          |
 | `track parallel-check` | 偵測子任務/兄弟 ticket 檔案衝突（W17-203.1，對齊 askuserquestion-rules 規則 7） | `ticket track parallel-check 0.18.0-W17-203` |
 | `track dispatch-validate` | Context Bundle 自動填料合理性檢查（W17-003，C 方案安全網；exit 0=pass / 1=軟警告 / 2=硬失敗或 IO 錯誤；**與 dispatch-check 的 exit code 語意不共享**，需以命令名稱判別） | `ticket track dispatch-validate 0.18.0-W17-003` |
-| `track dispatch-readiness` | 派發前認知負擔閾值檢查（W17-053；三項閾值：功能職責數 / 修改檔案數 / Context Bundle tokens；exit 0=pass / 1=軟警告 / 2=強制拆分或 IO 錯誤；**與 dispatch-check / dispatch-validate 的 exit code 語意不共享**；閾值 1 以 acceptance 條目近似，含驗證類條目時可能高估，PM 於 WARN/FAIL 應手動覆核——詳見 references/track-command.md） | `ticket track dispatch-readiness 0.18.0-W17-053` |
+| `track dispatch-readiness` | 派發前認知負擔閾值檢查（三項閾值：功能職責數 / 修改檔案數 / Context Bundle tokens；exit 0=pass / 1=軟警告 / 2=強制拆分或 IO 錯誤；**與 dispatch-check / dispatch-validate 的 exit code 語意不共享**；閾值 1 以 acceptance 條目近似，含驗證類條目時可能高估，PM 於 WARN/FAIL 應手動覆核——詳見 references/track-command.md） | `ticket track dispatch-readiness 0.18.0-W17-053` |
 | `show`              | 顯示 Ticket（含渲染）      | `ticket show W17-015` / `ticket show W17-015 -r`                           |
 | `handoff`           | 任務交接                   | `/ticket handoff 1.0.0-W1-002 --to-sibling 1.0.0-W2-003`                   |
 | `resume`            | 恢復任務                   | `/ticket resume <id>`                                                      |
@@ -174,7 +175,7 @@ ticket create --version 0.31.0 --wave 4 --action "實作" --target "XXX"  # 建�
 
 建立 Atomic Ticket，支援 5W1H 引導式建立、子 Ticket 建立、版本目錄初始化（init）。
 
-> **版本歸屬引導**（0.3.3-W1-001）：create 時根據 `--type` 和 `--action` 自動建議目標版本。新功能（IMP + 實作/新增/建立/開發）→ 大版本（0.x+1.0）；修復/改善/分析/文件 → 小版本（最新已完成版本 +1 patch）。未指定 `--version` 時自動套用建議；指定但與建議不符時輸出 WARNING（不阻擋）。
+> **版本歸屬引導**：create 時根據 `--type` 和 `--action` 自動建議目標版本。新功能（IMP + 實作/新增/建立/開發）→ 大版本（0.x+1.0）；修復/改善/分析/文件 → 小版本（最新已完成版本 +1 patch）。未指定 `--version` 時自動套用建議；指定但與建議不符時輸出 WARNING（不阻擋）。
 
 > 決策樹：Read `references/workflow-create.md`
 > 詳細用法：Read `references/create-command.md`
@@ -313,7 +314,7 @@ ticket batch-create --template impl-parsley --targets "a,b" --parent 1.0.0-W28-0
 > ticket track stale-list --wave 17 --format ids    # 僅輸出 ID（適合 pipe）
 > ```
 >
-> 閾值複用 `lib/staleness.py`：info ≥ 7 天 / warning ≥ 14 天 / critical ≥ 30 天。輸出依 days 降序。table 格式另附 stale in-progress 章節（>= 24h，依 frontmatter `started_at` 單平面判定，附 `ticket track release <id>` 釋放提示）；`ids`/`yaml` 維持 pending-only 向後相容（1.5.0-W5-005.7）。詳見 `references/track-command.md`「track stale-list 子命令」章節。
+> 閾值複用 `lib/staleness.py`：info ≥ 7 天 / warning ≥ 14 天 / critical ≥ 30 天。輸出依 days 降序。table 格式另附 stale in-progress 章節（>= 24h，依 frontmatter `started_at` 單平面判定，附 `ticket track release <id>` 釋放提示）；`ids`/`yaml` 維持 pending-only 向後相容。詳見 `references/track-command.md`「track stale-list 子命令」章節。
 
 > **TD 清單校準 — `td-status`**（W10-083 / PC-094）：掃描指定 ticket 的 body 與 git commit 訊息，將 TD 編號分類為「已處理 / 無需處理 / 仍待處理」三狀態。用於 Phase 3a/3b/4 結束時即時校準 TD 清單，防止 Phase 4 評估時誤判已完成項（PC-094 根因）。
 >
@@ -453,12 +454,13 @@ ticket handoff --from-worklog [--worklog-path PATH] [--dry-run]
 
 ---
 
-**Version**: 2.9.0
-**Last Updated**: 2026-07-08
+**Version**: 2.10.0
+**Last Updated**: 2026-08-04
 **Status**: Completed
 
 **Change Log**:
 
+- v2.10.0 (2026-08-04): 系統模型章節新增第三條「type 與 instance 一對多」反直覺預設（列表由二條擴為三條，標題同步改「三個」）：明示 agent 類型與執行體非一對一、同類型可同時 spawn 多個獨立執行體；緊接帶出反向風險——並行上限來自共享 git index 寫入競爭、主線程序列化的驗收與建票工作、執行體 context 累積三項約束，而非類型數
 - v2.9.0 (2026-07-08): 系統模型章節新增「named agent 生命週期三態」——擴展 agent=CI runner 類比從二態（running/stopped）為三態（新增 idle=warm runner），路由 PM 回收 SOP 到 parallel-dispatch.md（W1-008 ANA 落地，W1-010）
 - v2.8.0 (2026-07-04): 新增「系統模型（設計自我描述）」章節——issue tracker + CI runner 為主類比、batch job queue 為輔，明示身份晚綁定與共享工作區兩個與 process 直覺相反的預設（設計回顧落地）；修正 stale 描述「priority 等欄位無 CLI 命令」（`set-priority` 已存在且完整接線，描述與 code 對齊）
 - v2.7.0 (2026-05-27): `/ticket` 裸指令預設行為改為 dashboard-first 流程（W3-013.1 落地，源於 W3-013 ANA 結論方向 a）

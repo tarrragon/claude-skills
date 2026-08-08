@@ -16,6 +16,12 @@ CLI 錯誤回饋合併 Hook - PostToolUse Hook
   1. check_skill_cli_error — 優先處理 ticket/skill CLI 錯誤（更 specific）
   2. check_general_cli_failure — 處理一般 CLI 失敗（若 skill CLI 已處理則跳過）
 
+Envelope 偵測模式 (W17-008.5.5；補移植於 0.0.1-W1-005):
+- 偵測 stdout/stderr 是否含 ErrorEnvelope 版本標記 `__error_envelope_v1__`
+- 命中表示 CLI 已輸出完整結構化錯誤訊息（format_error 雙路徑），hook 不需重複補充引導
+- Marker 來源: .claude/skills/ticket/ticket_system/lib/messages.py:ERROR_ENVELOPE_VERSION_MARKER
+- 升級至 v2 時兩處須同改
+
 行為: 不阻擋（exit 0），僅在 additionalContext 輸出提醒訊息
 
 HOOK_METADATA (JSON):
@@ -94,9 +100,14 @@ EXCLUDED_ERROR_PATTERNS = [
     r"invalid json",
 ]
 
+# ErrorEnvelope 版本標記（W17-008.5.5；移植自 skill-cli-error-feedback-hook.py，0.0.1-W1-005）
+# 與 .claude/skills/ticket/ticket_system/lib/messages.py:ERROR_ENVELOPE_VERSION_MARKER 同步
+# 升級至 v2 時兩處須同改
+ENVELOPE_VERSION_MARKER = "__error_envelope_v1__"
+
 SKILL_CLI_ERROR_FEEDBACK_TEMPLATE = """
 ============================================================
-[SKILL 引導品質回饋] CLI 錯誤偵測
+[CLI 錯誤偵測] 參數或子命令不符預期
 ============================================================
 
 檢測到 SKILL/Ticket CLI 命令使用了不存在或格式錯誤的參數。
@@ -104,13 +115,16 @@ SKILL_CLI_ERROR_FEEDBACK_TEMPLATE = """
 錯誤類型：{error_type}
 失敗命令：{command_summary}
 
-可能原因：
-  SKILL 引導不足，使用者嘗試了 SKILL.md 中未明確說明的用法
+可能成因（不預設何者為真，需依實際情況判斷）：
+  1. 功能尚未實作：CLI 缺對應的參數/子命令路徑
+  2. SKILL 引導不足：SKILL.md 未涵蓋此用法
+  3. 使用者誤用：參數拼寫或語法有誤
 
 建議動作：
-  1. 確認 SKILL.md 是否有此使用情境的說明
-  2. 查閱完整語法：執行 `{command_base} --help`
-  3. 若多人遇到同樣困惑，建立改善 Ticket
+  1. 查閱完整語法：執行 `{command_base} --help`，確認該參數/子命令是否存在
+  2. 若 --help 未列出此參數/子命令 -> 屬功能缺口，建立 ticket 追蹤：
+     `/ticket create --type ANA --title "[ANA] 評估 CLI 是否需支援 <參數/子命令>"`
+  3. 若 --help 已列出但用法不同 -> 屬文件缺口，補充 SKILL.md：
      `/ticket create --type ADJ --title "[ADJ] 補充 SKILL.md 文檔"`
 
 詳見: .claude/skills/ticket/SKILL.md
@@ -160,20 +174,32 @@ GIT_INFO_STDERR_PATTERNS = [
 # Skill CLI Error 子邏輯（來自 skill-cli-error-feedback-hook）
 # ============================================================================
 
-def is_skill_cli_command(command: str) -> bool:
-    """判斷命令是否為 ticket/skill CLI 命令（首 token 比對）"""
+def _find_skill_cli_token(command: str) -> Optional[str]:
+    """在複合命令（含 && / ; / | 等鏈式運算子）中尋找觸發 ticket/skill CLI 的片段，
+    回傳該片段的首 token（已去除 `/` 前綴）；未命中回傳 None。
+
+    供 `is_skill_cli_command`（是否命中）與 `extract_command_summary`
+    （取實際 CLI 命令而非整條複合命令的第一個 token，0.0.1-W1-010）共用，
+    避免同一套片段掃描邏輯在兩處各自實作一次而漂移。
+    """
     for segment in re.split(r'[|&;]+', command):
         segment = segment.strip().lstrip('(').strip()
         if not segment:
             continue
         tokens = segment.split()
-        if tokens:
-            first_token = tokens[0]
-            if first_token.startswith("/"):
-                first_token = first_token[1:]
-            if first_token in SKILL_CLI_COMMANDS:
-                return True
-    return False
+        if not tokens:
+            continue
+        first_token = tokens[0]
+        if first_token.startswith("/"):
+            first_token = first_token[1:]
+        if first_token in SKILL_CLI_COMMANDS:
+            return first_token
+    return None
+
+
+def is_skill_cli_command(command: str) -> bool:
+    """判斷命令是否為 ticket/skill CLI 命令（首 token 比對）"""
+    return _find_skill_cli_token(command) is not None
 
 
 def is_excluded_error(stderr: str, stdout: str) -> bool:
@@ -183,6 +209,15 @@ def is_excluded_error(stderr: str, stdout: str) -> bool:
         if re.search(pattern, combined, re.IGNORECASE):
             return True
     return False
+
+
+def is_envelope_output(stderr: str, stdout: str) -> bool:
+    """偵測輸出是否含 ErrorEnvelope 版本標記。
+
+    與 messages.py:ERROR_ENVELOPE_VERSION_MARKER 同步。命中表示 CLI
+    已輸出完整結構化錯誤，hook 不需重複補充引導。
+    """
+    return ENVELOPE_VERSION_MARKER in stderr or ENVELOPE_VERSION_MARKER in stdout
 
 
 def detect_skill_error_type(stderr: str, stdout: str) -> Optional[str]:
@@ -195,12 +230,26 @@ def detect_skill_error_type(stderr: str, stdout: str) -> Optional[str]:
 
 
 def extract_command_summary(command: str) -> Tuple[str, str]:
-    """提取命令摘要和基本命令"""
+    """提取命令摘要和基本命令
+
+    `command_base` 優先取複合命令（含 `&&` / `;` / `|` 等鏈式運算子）中實際
+    觸發 ticket/skill CLI 呼叫的片段首 token；未命中時 fallback 為整條命令
+    的第一個 token（維持既有單一命令行為）。
+
+    原缺陷（0.0.1-W1-010）：一律取整條命令的第一個 token，`cd <path>
+    2>/dev/null; ticket track set-where ...` 這類複合命令會誤取 `cd`，使
+    後續 `{command_base} --help` 建議變成無意義的 `cd --help`（`cd` 是
+    shell builtin，無 `--help`）。
+    """
     command_summary = command[:80] if len(command) > 80 else command
-    parts = command.strip().split()
-    command_base = parts[0] if parts else command
-    if command_base.startswith("/"):
-        command_base = command_base[1:]
+
+    command_base = _find_skill_cli_token(command)
+    if command_base is None:
+        parts = command.strip().split()
+        command_base = parts[0] if parts else command
+        if command_base.startswith("/"):
+            command_base = command_base[1:]
+
     return command_summary, command_base
 
 
@@ -235,6 +284,11 @@ def check_skill_cli_error(input_data: Dict[str, Any], logger) -> Optional[str]:
 
     if not stderr and not stdout:
         logger.debug("skill-cli: 無錯誤資訊，跳過")
+        return None
+
+    # 跳過 ErrorEnvelope 已輸出完整結構化訊息的情況（W17-008.5.5）
+    if is_envelope_output(stderr, stdout):
+        logger.debug("skill-cli: ErrorEnvelope 已輸出完整訊息，跳過補充: %s", command[:80])
         return None
 
     if is_excluded_error(stderr, stdout):
