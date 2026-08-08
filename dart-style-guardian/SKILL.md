@@ -141,9 +141,7 @@ TextStyle(fontSize: 14.sp)  // Manual scaling
 
 ## Internationalization (i18n)
 
-i18n 硬編碼檢測、ARB 工作流程、支援語言清單詳見 `/dart-i18n-checker`。
-
-**快速參考**：所有使用者可見文字必須使用 `context.l10n!.keyName`，禁止硬編碼字串。
+所有使用者可見文字必須取自 ARB 產生的 localization 類別，禁止硬編碼字串。存取方式依專案的 `l10n.yaml` 設定而定，常見兩種：`AppLocalizations.of(context).keyName`（`nullable-getter: false`）或 `context.l10n!.keyName`（專案自建 extension）。動手前先讀專案的 `l10n.yaml` 與既有呼叫點確認慣例，勿沿用他專案的寫法。
 
 ---
 
@@ -194,7 +192,7 @@ BorderRadius.circular(UIBorderRadius.sm)
 
 ### Violation 5: Hardcoded Text
 
-硬編碼文字檢測和修正詳見 `/dart-i18n-checker`。
+使用者可見文字直接寫在 widget 內，未取自 ARB。`style_checker.py scan` 以 `[i18n]` 標記回報這類違規；修正方式是把字串移入 ARB 檔並改以 localization 類別存取（存取語法見上方 Internationalization 節）。
 
 ### Violation 6: ViewModel Hardcoded User Messages
 
@@ -261,9 +259,6 @@ The style checker is integrated into PostEdit Hook:
 - [Color System Reference](./references/color-system.md)
 - [Spacing System Reference](./references/spacing-system.md)
 - [Typography System Reference](./references/typography-system.md)
-
-### Related Skills
-- `/dart-i18n-checker` - i18n 硬編碼全量掃描和修正工作流程
 
 ### External Resources
 - [Flat Design Explained - MasterClass](https://www.masterclass.com/articles/flat-design-explained)
