@@ -24,7 +24,8 @@
     "version": "1.5.0"
   },
   "cc-release-impact-review": {
-    "hash": "92db0dc16fc0bd255b8f7c025ac64846a8f0c9b438bcafcf07a5bbf08d4ff255"
+    "hash": "839518ecbc5093b271c8271e04c6d069e677ef2490f4e5ad4a74f9978115292d",
+    "version": "1.0.0"
   },
   "chrome-extension-mcp-debug": {
     "hash": "d468f6a713c6804c36cd64672898c7c4f9f5022b13a1409491aafb8bea271711",
