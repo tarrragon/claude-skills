@@ -31,17 +31,17 @@ import re
 import sys
 from pathlib import Path
 
-_FRAMEWORK_HOOKS = str(Path(__file__).resolve().parents[3] / "hooks")
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "hooks" / "lib"))
-sys.path.insert(0, _FRAMEWORK_HOOKS)
+_CLAUDE_DIR = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_CLAUDE_DIR))
+sys.path.insert(0, str(_CLAUDE_DIR / "hooks"))
 
-from hook_io import (
+from lib.hook_io import (
     read_hook_input,
     write_hook_output,
     create_simple_output,
 )
-from git_utils import get_project_root
-from hook_utils import setup_hook_logging, run_hook_safely
+from lib.git_utils import get_project_root
+from lib import setup_hook_logging, run_hook_safely
 
 
 def is_version_release_commit(tool_input: dict, logger: logging.Logger) -> tuple:
