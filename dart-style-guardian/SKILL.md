@@ -219,6 +219,43 @@ state = state.copyWith(errorMessage: ErrorHandler.getUserMessage(exception));
 
 ---
 
+## Project Calibration
+
+偵測規則本身跨專案通用（硬編碼的顏色、間距、字級一律該進 design system），但**替代方案的名字是專案專屬的**。校準檔告訴掃描器本專案的詞彙：
+
+`.claude/config/dart-style-guardian.json`
+
+```json
+{
+  "tokens": {
+    "color": "AppPalette",
+    "spacing": "AppSpacing",
+    "font_size": "AppTypography",
+    "border_radius": "AppRadius"
+  },
+  "i18n": {
+    "accessor": "AppLocalizations.of(context).keyName",
+    "compliance_pattern": "AppLocalizations\\.of\\("
+  },
+  "exempt_markers": ["magic-exempt", "i18n-exempt"]
+}
+```
+
+| 欄位 | 作用 |
+|------|------|
+| `tokens.*` | 修正建議指名的類別；同時作為「此行已合規」的判定依據 |
+| `i18n.accessor` | i18n 建議中顯示的存取語法 |
+| `i18n.compliance_pattern` | 判定該行已使用 localization 的正則 |
+| `exempt_markers` | 行內註解含此標記即豁免，並計入報告的 exempt 計數 |
+
+**缺此檔時**：掃描器仍偵測硬編碼，但建議改為描述性敘述（「改用專案 design system 的 color token」），並在 stderr 提示。這是刻意的——指名某套命名等於斷言它是對的，而讀者照著不存在的類別動手會寫出編譯不過的程式碼。
+
+**豁免的可見性**：被標記豁免的行不列為違規，但計數會出現在報告（`Exempt (marked in source): N`）。靜默略過的行與掃描器看不見的行無法區分，讀者也就無從判斷標記是否真的生效。
+
+**單一規則來源**：PostEdit hook（`.claude/hooks/dart-style-guardian-hook.py`）匯入 `style_checker` 的規則與校準，不另維護一份。兩套規則各自演化的結果是 hook 與 skill 給出互相矛盾的建議。
+
+---
+
 ## Detection Script Usage
 
 ### Manual Scan
