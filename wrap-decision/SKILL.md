@@ -52,6 +52,8 @@ description: "WRAP 決策框架 — 認知偏誤防護、選項擴增與資料�
 
 > **實證**：某次面對「hook 出口被降級後該保留還是回退」的處置決策，直覺清單為三項（保留 / 回退 / 先複核）。跑 WRAP 後，W 階段反向框架把問題從「出口該多硬」重寫為「這個防護該不該存在於此執行點」，方案擴增至 5 項，使用者最終採用的方案不在直覺清單內。
 
+> 本節為「二元處置取捨」判準的 substance 權威來源。`.claude/pm-rules/askuserquestion-rules.md`「選項空間檢查」節為其專案層落地版本，兩節判準相同，修改請以本節為準並同步該節。
+
 **快速模式**（5 分鐘）：錨點 + Step 0 + W + 基本率（R 核心）+ 機會成本（A 核心）+ 決定
 **快速+模式**：快速模式 + 強制 R 的基本率 / 反向驗證兩階段反思（分析任務最容易跳過事證直接下結論，故在快速基礎上補回 R 核心 + 一輪反向驗證）
 **完整模式**（15-30 分鐘）：全階段
@@ -492,12 +494,14 @@ WRAP 每階段之間是切割點 — 強迫問「是否繼續」：
 
 ---
 
-**Last Updated**: 2026-07-30
+**Last Updated**: 2026-08-04
+**Version**: 2.9.0 — 「二元處置取捨」節補一則權威標註：本節為該判準的 substance 權威來源，`.claude/pm-rules/askuserquestion-rules.md`「選項空間檢查」節為對應落地版本，消除兩節間逐字重複的 Why/Consequence/實證段
+
 **Version**: 2.8.0 — 移植 blog 分支獨有演化（來源：blog 分支 2.4.0 + 2.5.0 合併）：觸發條件表新增「不可逆 / 時間壓力」「利害關係人衝突」兩項；新增「快速+模式」定義（原僅見於觸發條件表值，未定義語意）；參考文件表補 `claim-quick-wrap.md`（原 canonical 已有該檔但未被引用，至今 orphan）；絆腳索類型表新增「基礎設施累積型」（escalation 連續 2+ 次、每次加一層工具 / 檔案 / 流程而 anchor 未曾明說時，亮 anchor 一次按其重定 apparatus 份量）。
 **Version**: 2.7.0 — 觸發條件表新增「二元處置取捨」項（入場閘門：處置類選項未經 W 階段產出即不得呈現），並補與既有結論錨定（3.2）的邊界說明——3.2 是 WRAP 內部自我檢查，本項是 WRAP 之前的入場閘門。
 **Version**: 2.6.0 — Step 0 資料充足度閘門新增「與 requirement-protocol 的分工邊界」子節：三機制（WRAP Step 0 / premortem context 閘門 / requirement-protocol）受眾與問題對照表 + 共用原則（一次一問、互為前置不重複），requirement-protocol 反向交叉引用同步（1.5.0-W5-009.7，源自外部 premortem skill context 充足度閘門）。
 **Version**: 2.5.0 — P 階段「行前預想」新增「每個預想失敗原因配早期警訊」條款：可觀測訊號（非模糊感覺）+ 需跨 session 監測時包裝為監測 ticket 綁 trigger（decision-trigger-binding 規則 2）（1.5.0-W5-009.6，源自外部 premortem skill early warning signals）。
-**Version**: 2.4.0 — 新增完整 premortem 流程（`references/premortem-workflow.md`）：failure-reason 並行深挖 + 三分綜合報告，銜接 P 階段簡化三問與理論依據 `principles/premortem-klein.md`；description 補觸發詞（premortem/事前驗屍/壓力測試計畫等）（1.5.0-W5-009.5）。
+**Version**: 2.4.0 — 新增完整 premortem 流程（`references/premortem-workflow.md`）：failure-reason 並行深挖 + 三分綜合報告，銜接 P 階段簡化三問與理論依據 `principles/premortem-klein.md`；description 補觸發詞（premortem/事前驗屍/壓力測試計畫等）。
 **Version**: 2.3.0 — 觸發條件新增 4 項決策路徑層干擾（CLI 自動駕駛（autopilot） / 既有結論錨定（Anchor） / 草率改規則 / 多步驟成功率盲點）；既有觸發條件不變動（向後相容）。
 **Version**: 2.2.0 — 觸發條件新增反思深度質疑（reflection_depth_challenge）說明，含與被困住語意的差異。
 **Version**: 2.1.0 — 新增多輪迭代查詢方法論（W）+ 反向驗證範本（R）+ 悖論識別檢查清單（A）+ 自我暴露偏好實踐（P）+ 2 個新 references（iterative-research / anti-paternalism）。
