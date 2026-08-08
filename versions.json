@@ -175,7 +175,8 @@
     "version": "2.2.5"
   },
   "teaching-sync": {
-    "hash": "bfbf096c891802f51ea6026bd602bef818ee53014e219c48ec7c548046b2ec24"
+    "hash": "3eafc52a94b3d1e3aeb5b9f01c2282c01af95e3b9ccf33e7d540b868c1ec2cbf",
+    "version": "1.0.0"
   },
   "tech-debt-capture": {
     "hash": "fa6cb5596a0f8007757a4b3589d39934050c3dadf213012eba1449f21eda8894",
