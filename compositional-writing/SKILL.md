@@ -3,7 +3,7 @@ name: compositional-writing
 description: "Composes atomic, intent-revealing, grep-friendly writing (Zettelkasten) for code comments, docs, logs, prompts, schema/ticket fields, external-analysis transformation, and long-form technical articles. Use when cognitive load and token cost matter. **Also triggers during multi-round review / batch review / 寫作 audit** — provides the keyword bank (正向陳述 / 口語修辭 / 地區用語 / 廢話前綴 / 裝飾符號 / 對讀者喊話 / 自評誇飾 / 必然性框架 / 澄清式框架 / 敘事姿態) and frame-specific check lists that multi-round-review reviewer agents need. Triggers: 寫註解, 寫文件, 寫日誌, 寫 prompt, 寫文章, 技術文章, 商業分析, 外部分析文章, 經驗談轉教學, 訪談整理, 機制重建, post-mortem, 架構決策, 除錯復盤, 檢討報告, 欄位設計, atomic, reusable, 多輪審查, multi-round review, batch review, 寫作 audit, 正向陳述, 口語修辭, 問句標題, 敘事視角, 字句層 grep, SOLID, 文章拆分, 結構決策, 擴充點, 依賴方向, 讀者分流."
 license: MIT
 metadata:
-  version: 0.50.0
+  version: 0.50.1
   category: writing-methodology
 ---
 
@@ -240,6 +240,7 @@ compositional-writing/
 ---
 
 **Last Updated**: 2026-08-08
+**Version**: 0.50.1 — `writing-documents.md` 的 Cross-reference format 表格：同目錄示範路徑被 broken-link 掃描判為斷鏈（原檔以自然語言註解說明「這是佔位路徑」，掃描器不解析自然語言）。改用 `broken-link-exempt` 行內 marker 顯式 opt-in 豁免（marker 僅作用於所在行），說明文字保留。
 **Version**: 0.50.0 — 兩項、皆由使用者對 v0.49.0 改寫成品的判定觸發。(1) 新增 `assertion-list-needs-reader-walkthrough` principle 卡 + 原則三「斷言清單要過重建測試」段：「三個毛病」式條列讀者只能硬記或盲信（正文沒給能重建結論的材料）、改寫成讀者位置的走查（讀者位置、動作加材料、結論後置）被判定「說得清楚非常多」、固化成寫作模式；含 before / after 對照範例、重建測試判準、審查 grep（拆開來看 / N 個毛病）。(2) `writing-code-comments.md` 頂端新增「最高原則：先評商業邏輯、再談文字」節 + 自檢清單首題：檢視註解的第一個評估是它有沒有解釋到這個行為 / 事件 / flag 的商業邏輯、沒有就不修文字、先重新檢討動機——這條決定註解該不該存在、其餘原則決定怎麼寫；SKILL.md 原則三同步加對應段。
 
 **Version**: 0.49.0 — 敘事姿態原則補「灌輸與懸念是同一個缺陷的兩個方向」：v0.48.0 立規範時把修懸念寫成「判準放開頭」、實際套用被使用者指出正是另一個方向的錯——把結論抽成開頭一段（或「觸發場景 / 整理目的 / 本文邊界」欄位組）直接給、推導擺後面、讀者沒有推導可依附只能硬記；概念要由讀者沿著推導自己長出來、不是被交付。分工修正為：標題承載結論（檢索錨）、開頭承載情境定位、判準在推導走完的位置浮現。principle 卡與 keyword bank 同步、徵兆表加「開頭有未經推導的結論摘要或欄位組」一列。同時示範性修正：把「三個毛病」式的斷言清單改成給讀者推導材料（例：「入口是自創行話」要附上實際進入點的程式碼對照、讓讀者自己看出註解與程式斷線）。
