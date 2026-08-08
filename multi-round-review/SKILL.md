@@ -3,7 +3,7 @@ name: multi-round-review
 description: "寫多篇章節後做多輪 agent reviewer audit 的標準操作流程。每輪用不同 frame 切換、跨輪 finding 互不重疊、停止訊號是 frame 涵蓋而非 finding 數遞減。Round 1-A 寫作規範 reviewer 必須同步 invoke `compositional-writing` skill 的字句層 keyword bank（正向陳述 / 口語修辭 / 地區用語 / 廢話前綴 / 裝飾符號 / 對讀者喊話 / 自評誇飾 / 必然性框架 / 敘事姿態）、且命中後要做語意判定（命中是候選不是判決）。觸發詞：多輪審查、Round 1/2/3、frame 切換、跨輪審查、reviewer 規劃、何時停止 review、寫作 audit、batch review、cadence 同骨化、enumeration 不窮盡、正向陳述、self-application sweep。Trigger when reviewing multiple writings via successive rounds of agent reviewers."
 license: MIT
 metadata:
-  version: 1.27.0
+  version: 1.27.1
   category: writing-methodology
 ---
 
@@ -68,7 +68,7 @@ metadata:
   - **正常化 EPS**：估值段如果使用了 peak-year 或 trough-year 的 EPS，是否做了正常化調整？未調整 = 估值偏差
   - **數據時效標示**：所有引用的財務數字是否標註年度/季度？文章老化後未標時效的數據會誤導讀者——「毛利率 21%」在 2025 年是事實、在 2027 年可能已過時。每個數據段至少標一次時效來源（「2025 年度財報」「2026 Q1 法說會」）
   - **N/A 處理**：維度不適用時標 N/A 並附簡短理由（如「非上市公司分析、正常化 EPS 不適用」）。N/A 代表「已評估、判定不相關」，跟「未檢查」不同
-  - 非財務分析內容不需要跑此 frame。詳見 [`business-analysis` skill](../business-analysis/SKILL.md) 的完整 7 步驟和 `references/` 操作清單。
+  - 非財務分析內容不需要跑此 frame。詳見 `business-analysis` skill（若專案已安裝）的完整 7 步驟和 `references/` 操作清單。
 
 預期 finding 類型：編號錯、broken link、案例 mis-citation、規範違反、字句層負向 / 口語 / 廢話、cadence 散點、**成本 / 時程 / 工具缺口**、**斷言支撐缺失（訴諸權威 / 無推導閾值）、模組級知識類型失配**、**分母未標示、獲利變動未拆解、基準前提未說明、關係人交易未辨識、估值未正常化**。
 
@@ -212,7 +212,7 @@ frame 清單長到一定程度之後會反覆出現同一個問題——某兩�
 - `case-first-module-workflow`（若專案已採用此 skill）的 Stage 4 含「agent team review」但偏 case-driven 單輪。Multi-round-review 補完跨輪 frame 切換維度、可以接在 case-first 的 Stage 5 之後或同時使用。
 - [`compositional-writing`](../compositional-writing/SKILL.md) 提供寫作原則（intent-revealing、grep-friendly）+ 字句層 grep keyword bank（正向陳述 / 口語修辭 / 地區用語 / 廢話前綴 / 裝飾符號）。**本 skill 啟動時應同步 invoke compositional-writing** — Round 1-A 寫作規範 reviewer 必須跑 compositional-writing 的字句 grep（見上）、Round 2-A cadence reviewer 引用其 multi-pass review 第 6 原則跟 cadence-homogenization 原則卡。兩個 skill 是垂直協同：multi-round-review 給 frame 切換結構、compositional-writing 給每輪 frame 的具體檢查清單。
 - **協同觸發**：用戶說「多輪審查 / 寫作 audit / batch review」時、兩個 skill 都該 surface — multi-round-review 規劃 frame、compositional-writing 提供每 frame 的 keyword bank。單獨用 multi-round-review 容易漏字句層、單獨用 compositional-writing 容易漏跨輪 frame 規劃。
-- [`business-analysis`](../business-analysis/SKILL.md) 提供商業分析的 7 步驟流程和 7 個分析模式（分母意識、邊際貢獻、正常化 EPS、關係人交易、三面受壓、結構性 vs 一次性、供給衝擊 vs 週期）。**審查的內容涉及財報判讀、產業比較、估值時，Round 1-F 應同步 invoke business-analysis skill** — 用其 7 步驟作為分析完整度的 checklist、用其 references/ 的判讀條件表驗證文中的分析是否到位。跟 compositional-writing 的垂直協同關係相同：multi-round-review 給 frame 結構、business-analysis 給商業分析維度的具體檢查清單。
+- `business-analysis`（若專案已安裝此 skill）提供商業分析的 7 步驟流程和 7 個分析模式（分母意識、邊際貢獻、正常化 EPS、關係人交易、三面受壓、結構性 vs 一次性、供給衝擊 vs 週期）。**審查的內容涉及財報判讀、產業比較、估值時，Round 1-F 應同步 invoke business-analysis skill** — 用其 7 步驟作為分析完整度的 checklist、用其 references/ 的判讀條件表驗證文中的分析是否到位。跟 compositional-writing 的垂直協同關係相同：multi-round-review 給 frame 結構、business-analysis 給商業分析維度的具體檢查清單。
 
 ## 反模式
 
@@ -226,6 +226,7 @@ frame 清單長到一定程度之後會反覆出現同一個問題——某兩�
 
 ---
 
+**Version**: 1.27.1 — 兩處 `business-analysis` 引用改為不帶連結的 backtick 形式並補「若專案已安裝」條件語：該 skill 不在 canonical skills 庫內，原本指向兄弟目錄 SKILL.md 的相對連結在任何 consumer 專案都解析失敗。改法對齊本檔既有的 `case-first-module-workflow` 慣例（同為選配 skill、以 backtick 提名不掛連結）。
 **Version**: 1.27.0 — Round 1-E 斷言層加「讀者可重建性」檢查：結論式條列逐條問「讀者只憑文中已給的材料能不能自己得出這條」、重建不了的不是字句問題、是缺推導材料——修法是展開成讀者位置的走查（讀者位置 / 動作加材料 / 結論後置）、不是修字句。從一個「三個毛病」段落的兩版改寫抽出：三條結論都對、但正文只給了被批評的那行註解本身、讀者無從驗證；走查版由使用者判定「說得清楚非常多」並要求固化。這補的是「說明不清楚、讀者可能無法理解的簡單敘述」這類 finding 的標準修法路徑——先前 reviewer 抓得到「不清楚」、但沒有改寫範式可引用。同步 compositional-writing v0.50.0 的 `assertion-list-needs-reader-walkthrough` principle。
 
 **Version**: 1.26.0 — 敘事姿態 bank 修正 v1.25.0 的「判準放開頭」措辭：把結論抽到開頭直接給是灌輸、跟懸念是同一個缺陷的兩個方向（都讓結論與推導脫節）、v1.25.0 立規範時自己踩進了另一個方向。改為「標題承載結論、開頭承載情境定位、判準由推導交付」、違規清單加「未經推導的開頭結論摘要與『觸發場景 / 整理目的』欄位組」。由使用者對套用了 v1.25.0 規範的改寫成品指出、同步 compositional-writing v0.49.0。
