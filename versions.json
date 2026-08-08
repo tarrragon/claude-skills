@@ -43,6 +43,10 @@
     "hash": "80cb101a5dc3caa9735c93d0fd3642cd4adf35bf7375d433465d5a9327e461a9",
     "version": "1.0.0"
   },
+  "dart-i18n-checker": {
+    "hash": "c46cf052e01e5db27020278cea9d632eac5af213088857805cabdb5f17a05cfb",
+    "version": "1.0.0"
+  },
   "data-extraction": {
     "hash": "bf7f7132148ce028303fff1dfb53683f47669d273e36c59983317ab56feeb848",
     "version": "1.0.0"
