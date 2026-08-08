@@ -1,52 +1,217 @@
 {
-  "5w1h-decision": "1.3.0",
-  "agent-team": "1.2.0",
-  "branch-worktree-guardian": "1.0.0",
-  "broken-link-check": "2.1.0",
-  "bulk-evaluate": "1.0.0",
-  "case-first-module-workflow": "1.5.0",
-  "chrome-extension-mcp-debug": "1.1.0",
-  "cognitive-load-assessment": "2.0.0",
-  "compositional-writing": "0.50.0",
-  "content-extension-evaluation": "1.0.0",
-  "decision-tree-helper": "2.0.0",
-  "design-decision-framework": "1.2.0",
-  "dispatch-strategy-review": "1.1.0",
-  "doc": "1.11.0",
-  "doc-flow": "1.0.0",
-  "evidence-driven-bugfix": "2.2.0",
-  "frontend-with-playwright": "0.3.0",
-  "golden-path-validation": "1.3.0",
-  "i18n-checker": "1.0.0",
-  "impeccable": "3.5.0",
-  "linux-install-debug": "1.16.0",
-  "lsp-first": "1.0.0",
-  "mermaid-ascii": "1.0.0",
-  "methodology-writing": "1.0.0",
-  "migration-playbook-methodology": "1.0.0",
-  "multi-round-review": "1.27.0",
-  "parallel-evaluation": "1.3.0",
-  "pre-fix-eval": "1.0.0",
-  "project-init": "1.1.0",
-  "provider-architecture": "1.0.0",
-  "requirement-protocol": "0.8.0",
-  "saas-tech-selection": "1.2.0",
-  "scope-confirmation": "1.1.0",
-  "search-tools-guide": "5.1.0",
-  "skill-design-guide": "1.1.0",
-  "skill-sync": "1.1.0",
-  "spec": "1.6.1",
-  "startup-check": "1.0.0",
-  "style-guardian": "1.0.0",
-  "tdd": "2.2.4",
-  "tech-debt-capture": "1.1.0",
-  "test-assertion-design": "1.2.0",
-  "test-async-guardian": "1.0.0",
-  "ticket": "2.9.0",
-  "ux-design-evaluation": "1.4.0",
-  "verification-driven-cli": "1.2.0",
-  "version-release": "2.0.0",
-  "worktree": "1.0.0",
-  "wrap-decision": "2.8.0",
-  "zellij": "1.0.0"
+  "5w1h-decision": {
+    "hash": "a847b53f6bd4c298cc824726e847cd0d69dfab1d330e5ad64f38ea0b7adc6441",
+    "version": "1.3.0"
+  },
+  "agent-team": {
+    "hash": "cceecfbb4f58649b509ae308996a9e5cd5f3646a8660d33d1b57fc4f75bc703b",
+    "version": "1.2.0"
+  },
+  "branch-worktree-guardian": {
+    "hash": "45b91303edefe112d946b9c8b065884fef7aa341cf2dd72bc7193e7ab4fc4112",
+    "version": "1.0.0"
+  },
+  "broken-link-check": {
+    "hash": "a2d100ad4c99a9e41378dda58d0de3ac40b428ef65a111a350f3eaed3228b7b8",
+    "version": "2.1.0"
+  },
+  "bulk-evaluate": {
+    "hash": "b4362947e6baeb94ba6b9527073c41d084898dc9cd00e4f478a31d189547ea65",
+    "version": "1.0.0"
+  },
+  "case-first-module-workflow": {
+    "hash": "82052d3dccdf9e3b8a5dcf21a24512adc0e9e883694b9a42e52c2cd3f2026dd7",
+    "version": "1.5.0"
+  },
+  "cc-release-impact-review": {
+    "hash": "92db0dc16fc0bd255b8f7c025ac64846a8f0c9b438bcafcf07a5bbf08d4ff255"
+  },
+  "chrome-extension-mcp-debug": {
+    "hash": "d468f6a713c6804c36cd64672898c7c4f9f5022b13a1409491aafb8bea271711",
+    "version": "1.1.0"
+  },
+  "cognitive-load-assessment": {
+    "hash": "aef40d32900601095e2d7615bd3da9ff73e21e70b7def57bf7850bd8a0a19dcc",
+    "version": "2.0.0"
+  },
+  "compositional-writing": {
+    "hash": "23012b1c0df4bdc85c1ec38ae32833671ffd3a1ad6c70ca0c097048e786d5088",
+    "version": "0.50.1"
+  },
+  "content-extension-evaluation": {
+    "hash": "80cb101a5dc3caa9735c93d0fd3642cd4adf35bf7375d433465d5a9327e461a9",
+    "version": "1.0.0"
+  },
+  "data-extraction": {
+    "hash": "454d35e41c4535c567c40fbe9276e50774e0ae71f97b817949e164b2ca9d9489"
+  },
+  "decision-tree-helper": {
+    "hash": "03cf70c726a4a49c5824d5140ff8d60c3bc61c3f42d33e39162acb540dfb08b5",
+    "version": "2.0.0"
+  },
+  "design-decision-framework": {
+    "hash": "c23959480ef3a3689709de955266bce072b9d6d7aa2df30ab90d88900ee684ed",
+    "version": "1.2.0"
+  },
+  "dispatch-strategy-review": {
+    "hash": "0e3f156c84164412ebfa60bd50ac38f04818712843e3079d6302c28822e13bfd",
+    "version": "1.1.0"
+  },
+  "doc": {
+    "hash": "45909b09ef76c0e57898e4cdffe436c806ea08acd738d5b024fa3516ec19d973",
+    "version": "1.11.0"
+  },
+  "doc-flow": {
+    "hash": "28d52ed9a3d8b78ae421f40ab1136d52726944192a6b2f27599710e70bc3c715",
+    "version": "1.0.0"
+  },
+  "evidence-driven-bugfix": {
+    "hash": "6fc7767df24e1d5064a8d2094c971cc3c9899445db7e33c39233b1c16536e292",
+    "version": "2.2.0"
+  },
+  "framework-issue": {
+    "hash": "aa91d81d823ee968a8c0f0ed459db4136d2b6a9ff2c4edf2c96bfba2269b7695"
+  },
+  "frontend-with-playwright": {
+    "hash": "afca387bdc5c152a0cdc214d9e36365511e49cba61af9ade550163b67fa3c0c4",
+    "version": "0.3.0"
+  },
+  "golden-path-validation": {
+    "hash": "e29ad0f2ffdd5b715b5bee9ab6a7ac710aa079ff246582abe6eb93015c6536aa",
+    "version": "1.3.0"
+  },
+  "i18n-checker": {
+    "hash": "419a4bd024b8e530ea6275db687aef6043ee17be3a0dcf75ea7c765724c5e7a6",
+    "version": "1.0.0"
+  },
+  "impeccable": {
+    "hash": "d7e1626af13b54360481928edd9f730385feb57c21ac5200e4d133553941da40",
+    "version": "3.5.0"
+  },
+  "linux-install-debug": {
+    "hash": "c3fd76669aadb6269a06fea2fe37f6b41a44f483670ade356b387b1cebdd2bef",
+    "version": "1.16.0"
+  },
+  "lsp-first": {
+    "hash": "1f60924a9925918e04dc03b1f726fb47267c6ab41a2d77c652f67a3aebff84e4",
+    "version": "1.0.0"
+  },
+  "mermaid-ascii": {
+    "hash": "a956caf5fb03d26c9729bad63406968105b586dcbb3e9785776b806956227de8",
+    "version": "1.0.0"
+  },
+  "methodology-writing": {
+    "hash": "43ea033c0b1a422e0f5ab67d2f6e7e2a20c67545ec674f6cc87f851b89336f07",
+    "version": "1.0.0"
+  },
+  "migration-playbook-methodology": {
+    "hash": "afaf5e8af970ec704015c0bfcef2f33860fe7f1613e86659eea6f3aa2ea10c4b",
+    "version": "1.0.0"
+  },
+  "multi-round-review": {
+    "hash": "96c5ba38d587cb6d2d3fd774485dc17cd83319c3c97796745285916037a7959a",
+    "version": "1.27.0"
+  },
+  "neurodivergent-output": {
+    "hash": "e03f1630d9b089961dfe7bbe96a7452f1849ecaeed89ac5344d42d40edf6578a"
+  },
+  "parallel-evaluation": {
+    "hash": "7d1391802f311f38cb9581a6fd95f0cacaf5a14cf6336a1a9a6f562c81adc566",
+    "version": "1.3.0"
+  },
+  "pre-fix-eval": {
+    "hash": "4cd669ec361b58386f1733a81d55e445f7a1a4a4cb9a98d1270bdeb12996cdbf",
+    "version": "1.0.0"
+  },
+  "project-init": {
+    "hash": "54c88b3b915f81ba7df6af318e8504b27a7b680a4fc8b88e4bce2781cd84d721",
+    "version": "1.1.0"
+  },
+  "provider-architecture": {
+    "hash": "e2a62ed902cfb63b2e83620bc4279e98959b52c8bc19f81a3adec276675d60a9",
+    "version": "1.0.0"
+  },
+  "requirement-protocol": {
+    "hash": "0407f04b30cf87130b05e2962d9d80596ec24dccb29fc995ce1261ffcaeea04e",
+    "version": "0.8.0"
+  },
+  "saas-tech-selection": {
+    "hash": "f56aa4bfae2cf0a9502c7db36c6b6ac4e3817e0ece27890464e93a9c5c966f2b",
+    "version": "1.2.0"
+  },
+  "scope-confirmation": {
+    "hash": "920450f69da7f77de4958f82d18c1d004bbf1b1f39a1940e5bd943f6da4502e0",
+    "version": "1.1.0"
+  },
+  "search-tools-guide": {
+    "hash": "64ced2f7750ea76a0bd9a0ed99443adb75616b4c6de087ad5d5b8a3028c8bdbf",
+    "version": "5.1.0"
+  },
+  "skill-design-guide": {
+    "hash": "a1619e9d6392ca6a32a18100dcc5e32376685375f262cbd069827bcfc3b5407c",
+    "version": "1.1.0"
+  },
+  "skill-sync": {
+    "hash": "00a1059f2c4f32b65b23854d7525354af0d797f76f136de405b6e8199d4e11f4",
+    "version": "1.1.0"
+  },
+  "spec": {
+    "hash": "048b61f71ab91a52f1133176e4bcb42dbcebe4c1c86fc026c6af4a06e68ae247",
+    "version": "1.6.1"
+  },
+  "startup-check": {
+    "hash": "60d3fc0ab187b2b6d94e53aac802f00f9cf69ce9de461772cf76ac29c368c08d",
+    "version": "1.0.0"
+  },
+  "style-guardian": {
+    "hash": "429b741fa4b7128990bbf54e03fbfd78a8a9f98c362565856243553bb8c50e85",
+    "version": "1.0.0"
+  },
+  "tdd": {
+    "hash": "e230dbc4e170de0693f97440f8dc75d431738e82d0c18043a5f9cebafb6a02ac",
+    "version": "2.2.4"
+  },
+  "teaching-sync": {
+    "hash": "bfbf096c891802f51ea6026bd602bef818ee53014e219c48ec7c548046b2ec24"
+  },
+  "tech-debt-capture": {
+    "hash": "fa6cb5596a0f8007757a4b3589d39934050c3dadf213012eba1449f21eda8894",
+    "version": "1.1.0"
+  },
+  "test-assertion-design": {
+    "hash": "b029bcde778ad1a0119655bcdb8c3f012d4a0bb3bd2ae9f7773a76c4500de89c",
+    "version": "1.2.0"
+  },
+  "test-async-guardian": {
+    "hash": "0a27674c96b4295ce86b473365090d05f52dae0612a82ff4fd33c89389bb9d82",
+    "version": "1.0.0"
+  },
+  "ticket": {
+    "hash": "b94cf6a517a3d6a5abb53586333c429664a0306691adf02391d579a17cdd5b84",
+    "version": "2.9.0"
+  },
+  "ux-design-evaluation": {
+    "hash": "5037de22d18a881fd9e11cf75489c208873d59e6d9544c2e27379c8629b49d6c",
+    "version": "1.4.0"
+  },
+  "verification-driven-cli": {
+    "hash": "de850eced497b1791fe24b5d05ed6b9a1f4235a852627021a41751b5fb473cdd",
+    "version": "1.2.0"
+  },
+  "version-release": {
+    "hash": "45c7ac06a36f2608f97a0dc3c9c37913640f4f9fe43d7d1c6e530be64f70ca1a",
+    "version": "2.0.0"
+  },
+  "worktree": {
+    "hash": "f78e3443f0268675ab76667260eebf9c5f1b877dd6eb0c170ccca7febe361b7e",
+    "version": "1.0.0"
+  },
+  "wrap-decision": {
+    "hash": "1082534f41d41f2be22e0fb54d3dfcdc177b9e8b83dcb8d839feda1a315e21a3",
+    "version": "2.8.0"
+  },
+  "zellij": {
+    "hash": "3b05031c6bdd73ef35142ee3ca216a8675719b48b5f484b486bb86ce5bbf65c3",
+    "version": "1.0.0"
+  }
 }
