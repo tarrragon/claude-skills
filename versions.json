@@ -44,7 +44,8 @@
     "version": "1.0.0"
   },
   "data-extraction": {
-    "hash": "454d35e41c4535c567c40fbe9276e50774e0ae71f97b817949e164b2ca9d9489"
+    "hash": "bf7f7132148ce028303fff1dfb53683f47669d273e36c59983317ab56feeb848",
+    "version": "1.0.0"
   },
   "decision-tree-helper": {
     "hash": "03cf70c726a4a49c5824d5140ff8d60c3bc61c3f42d33e39162acb540dfb08b5",
