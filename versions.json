@@ -55,6 +55,10 @@
     "hash": "c5e392d3a8ee4c8b4a008d5cd4fcc428072e496edd96504d802d77877b05f234",
     "version": "1.0.0"
   },
+  "dart-style-guardian": {
+    "hash": "6b170df40dca4847e3e98fefa885a16eacdf69f89b6cb53ad9bb4536d7a16df9",
+    "version": "1.0.0"
+  },
   "data-extraction": {
     "hash": "bf7f7132148ce028303fff1dfb53683f47669d273e36c59983317ab56feeb848",
     "version": "1.0.0"
