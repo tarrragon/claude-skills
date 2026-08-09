@@ -178,7 +178,7 @@
     "version": "1.0.0"
   },
   "tech-debt-capture": {
-    "hash": "fa6cb5596a0f8007757a4b3589d39934050c3dadf213012eba1449f21eda8894",
+    "hash": "d9df8cea76601d4f591505cf9b205bd9b8fd670d8d0960d9394d296732fb9191",
     "version": "1.1.0"
   },
   "test-assertion-design": {
