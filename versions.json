@@ -197,6 +197,10 @@
     "hash": "638686eb5c906737a458c1ead3292206be6508764a6d8955f5351b9ee61d5ab5",
     "version": "1.2.0"
   },
+  "test-effectiveness": {
+    "hash": "7efed00bc1bfae5224c38867c55475c84e7cd6e0b28fa6eaa7bcde9372e6e7bc",
+    "version": "2.0.0"
+  },
   "ticket": {
     "hash": "d25de855ceb5621f98199c43c52e408914431bdf300ac9dc80dc554833aa7453",
     "version": "2.10.0"
