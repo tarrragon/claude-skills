@@ -213,6 +213,10 @@
     "hash": "de850eced497b1791fe24b5d05ed6b9a1f4235a852627021a41751b5fb473cdd",
     "version": "1.2.0"
   },
+  "version-bootstrap": {
+    "hash": "772e2b676d62be7ef77bbd92c2685fb86d75e4464a0d7e49fd889ec75d0f10cf",
+    "version": "1.4.0"
+  },
   "version-release": {
     "hash": "1ebf964a617c80ff51c5b22e29a54e9adb9bb55a807117c62653861e8100db02",
     "version": "2.0.0"
