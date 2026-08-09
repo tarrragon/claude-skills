@@ -126,7 +126,7 @@
     "hash": "e03f1630d9b089961dfe7bbe96a7452f1849ecaeed89ac5344d42d40edf6578a"
   },
   "parallel-evaluation": {
-    "hash": "7d1391802f311f38cb9581a6fd95f0cacaf5a14cf6336a1a9a6f562c81adc566",
+    "hash": "bc3d3360a67cab396e893210f65ef3d7a29132861435ac05b81a5ad7bbd3164e",
     "version": "1.3.0"
   },
   "pre-fix-eval": {
