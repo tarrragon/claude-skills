@@ -21,13 +21,14 @@ description: "Style Guardian - Unified Design System Enforcement Tool. Use for: 
 
 ### Key Files
 
-| File | Purpose |
-|------|---------|
-| `lib/core/ui/ui_config.dart` | Core style configuration system |
-| `lib/core/ui/flat_design_config.dart` | Flat design component configuration |
-| `lib/core/ui/responsive_config.dart` | Responsive layout configuration |
-| `lib/app/theme.dart` | Application theme (uses UIColors) |
-| `docs/ui_design_specification.md` | UI design specification document |
+檔案位置因專案而異，故以角色描述而非路徑列出——寫死某專案的路徑，其他專案讀到的就是一份指向不存在檔案的清單。實際位置見 `.claude/config/dart-style-guardian.json` 的 `tokens` 欄位所指的類別，以及專案的 `l10n.yaml`。
+
+| Role | 內容 |
+|------|------|
+| Design system tokens | 顏色、間距、字級、圓角的 SSOT；掃描器據此判定何謂「已使用 token」 |
+| Theme | 組裝 tokens 為 ThemeData 的入口 |
+| Localization 設定 | `l10n.yaml` 決定 ARB 位置與存取子形態 |
+| UI 設計規格 | 設計稿與元件規範文件（如有） |
 
 ---
 
@@ -282,15 +283,9 @@ The style checker is integrated into PostEdit Hook:
 
 ## Related Documentation
 
-### Project Files（Flutter 專案適用）
+### Project Files
 
-以下路徑為 Flutter 專案的設定與規格檔；非 Flutter 專案無對應檔案，請替換為自身專案的等價設定來源：
-
-- UI Configuration: `lib/core/ui/ui_config.dart`
-- Flat Design Config: `lib/core/ui/flat_design_config.dart`
-- Responsive Config: `lib/core/ui/responsive_config.dart`
-- UI Design Specification: `docs/ui_design_specification.md`
-- i18n Guide: `docs/i18n_guide.md`
+同上節，以角色而非路徑指涉：design system token 定義、theme 組裝入口、`l10n.yaml` 與其指向的 ARB、設計規格文件。要知道本專案的實際位置，讀 `.claude/config/dart-style-guardian.json` 與 `l10n.yaml`，或直接搜尋 token 類別名的定義處。
 
 ### Reference Files (in this SKILL)
 - [Color System Reference](./references/color-system.md)
