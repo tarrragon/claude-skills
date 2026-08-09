@@ -43,6 +43,10 @@
     "hash": "80cb101a5dc3caa9735c93d0fd3642cd4adf35bf7375d433465d5a9327e461a9",
     "version": "1.0.0"
   },
+  "continuous-learning": {
+    "hash": "aa1c563f2d4b75e9e5bbea33f4f431e5e0f6f180657b5d9575d7133ef9114fab",
+    "version": "4.1.0"
+  },
   "dart-domain-modeling": {
     "hash": "7f0046352a871e268b0ddd0841fc2e697179deebf30a804718e3cedd61a5d4b9"
   },
@@ -77,6 +81,10 @@
   "doc-flow": {
     "hash": "8ef6d90e900dbe3bb1e1833afa073d11646739d98e19e20125cde301b6b4f7af",
     "version": "1.0.0"
+  },
+  "error-pattern": {
+    "hash": "23bfbdacf8dbf6cf1b77a34ad86c27b56d939f7c40722f3f280f9d3a98f463fd",
+    "version": "1.4.0"
   },
   "evidence-driven-bugfix": {
     "hash": "6fc7767df24e1d5064a8d2094c971cc3c9899445db7e33c39233b1c16536e292",
@@ -167,6 +175,10 @@
   },
   "startup-check": {
     "hash": "60d3fc0ab187b2b6d94e53aac802f00f9cf69ce9de461772cf76ac29c368c08d",
+    "version": "1.0.0"
+  },
+  "strategic-compact": {
+    "hash": "1b5f50e79a3dc777dca49328b3647ffba6b2f8c5a009de74b7ed1bc5b0a2920a",
     "version": "1.0.0"
   },
   "tdd": {
