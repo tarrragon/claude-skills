@@ -189,6 +189,10 @@
     "hash": "3eafc52a94b3d1e3aeb5b9f01c2282c01af95e3b9ccf33e7d540b868c1ec2cbf",
     "version": "1.0.0"
   },
+  "team-design-evaluation": {
+    "hash": "b96164465edb98ff4797f800d829e76abbaf3fe49636e56a2219dd67d5cb1157",
+    "version": "1.3.0"
+  },
   "tech-debt-capture": {
     "hash": "d9df8cea76601d4f591505cf9b205bd9b8fd670d8d0960d9394d296732fb9191",
     "version": "1.1.0"
