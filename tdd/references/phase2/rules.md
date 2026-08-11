@@ -245,7 +245,7 @@ Phase 2 設計時，對照 Phase 1 的非功能性需求，推導對應測試：
 
 **豁免判準**：場景無 runtime surface（純 domain 計算、data contract、演算法）→ 豁免外圈，單元/契約層先紅即可。判準句：「此場景有無可駕駛的執行面（畫面、CLI、API endpoint）」——有則外圈先紅，無則豁免。
 
-**外圈紅燈與 100% 綠 gate 的共存**：開發中的外圈紅燈以 tag 隔離（如 `@Tags(['wip-acceptance'])` + dart_test.yaml skip），顯式 `-t wip-acceptance` 觀察紅燈；**移除 tag 即宣告功能完成**，測試進入 gate 範圍。tag 存活超過一個版本即為異味——外圈紅燈不該跨版本存活；發現跨版本存活的 tag 時，建 IMP ticket 於當版完成該功能並移除 tag，或將該場景降回規劃層重議豁免。
+**外圈紅燈與 100% 綠 gate 的共存**：開發中的外圈紅燈以 tag 隔離（如 `@Tags(['wip-acceptance'])` + dart_test.yaml skip），顯式 `-t wip-acceptance --run-skipped` 觀察紅燈（實測確認：dart_test.yaml 的 skip 對命中 tag 的測試無條件生效，單靠 `-t` 不覆蓋，須加 `--run-skipped`）；**移除 tag 即宣告功能完成**，測試進入 gate 範圍。tag 存活超過一個版本即為異味——外圈紅燈不該跨版本存活；發現跨版本存活的 tag 時，建 IMP ticket 於當版完成該功能並移除 tag，或將該場景降回規劃層重議豁免。
 
 ### 測試類型選擇
 
