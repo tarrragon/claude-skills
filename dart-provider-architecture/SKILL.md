@@ -134,9 +134,11 @@ fail-fast DI 契約（未接線即拋錯）是正確設計，但契約只在有�
 測試若全部自備 override，真實接線路徑就是零覆蓋——契約永不被演練，漏接要到
 實機啟動才炸開，且全部畫面一起死。
 
-**規則：每宣告一個必接線 provider，必須同時存在兩個測試。**
+**規則：每宣告一個必接線 provider（宣告端形態見下），必須同時存在兩個測試。**
 
 ### 觸發形態（宣告端）
+
+觸發判準是**語意**不是字面：任何「未接線即拋錯的 DI 注入點」都算——`UnimplementedError` 只是慣用形態，`StateError`、`late` 未初始化、強制轉型失敗等等價寫法同樣觸發配對規則。
 
 ```dart
 /// 資料層注入點。app root 須以真實實作 override，未 override 即拋錯，
@@ -145,6 +147,9 @@ final repositoryProvider = Provider<Repository>((ref) {
   throw UnimplementedError('repositoryProvider must be overridden at app root');
 });
 ```
+
+> **形態無關性**：本規則的論證（fail-fast 契約 + 全 mock 測試 ⇒ 真實接線零覆蓋）與 DI 形態無關——GetIt 的未 register 拋錯、InheritedWidget 的 `of(context)!` 同構適用，本 skill 僅提供 Riverpod 落地形式。
+> **雙路由**：wiring test 屬「綠燈後補的防護型測試」，須依 `/tdd` skill `references/phase2/rules.md` 組 4 Q12 做一次故意破壞實測；其替身邊界（本例 ffi + in-memory 屬 host 層結構替身，不涵蓋 on-device 接縫）見同檔「紅燈層級順序」節替身術語。
 
 ### 配對測試 (a)：真實接線 wiring test
 
@@ -192,7 +197,7 @@ test('un-overridden mandatory provider still throws', () {
 
 ### 為什麼通用生成會漏掉這條
 
-LLM 通用生成會把契約（拋錯 provider）和測試（mock override）**各自寫對**，
+「通用生成」指未載入本規範的 LLM 依通用知識產生程式碼。它會把契約（拋錯 provider）和測試（mock override）**各自寫對**，
 但不知道兩者之間有一條必須閉合的迴路——mock override 教學愈完整，真實接線
 路徑愈沒有測試理由存在。本規則就是把這條迴路顯性化。
 
