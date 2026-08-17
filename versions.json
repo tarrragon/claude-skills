@@ -110,6 +110,10 @@
     "hash": "d7e1626af13b54360481928edd9f730385feb57c21ac5200e4d133553941da40",
     "version": "3.5.0"
   },
+  "knowledge-cards": {
+    "hash": "11ba015d2d7215c53ce77483bd404126aeb721e1e5498e38b672e32f8ee27f91",
+    "version": "1.6.0"
+  },
   "linux-install-debug": {
     "hash": "c3fd76669aadb6269a06fea2fe37f6b41a44f483670ade356b387b1cebdd2bef",
     "version": "1.16.0"
