@@ -36,8 +36,8 @@
     "version": "2.0.0"
   },
   "compositional-writing": {
-    "hash": "c1237d62387f0c8ff63d633ec1b292b10c522e52d675183f7b4f4fa0feeb6aa4",
-    "version": "0.55.0"
+    "hash": "c924b140eb05d3b170df70ecc7a2269061a20787519b275532ada37a66fa909b",
+    "version": "0.55.1"
   },
   "content-extension-evaluation": {
     "hash": "80cb101a5dc3caa9735c93d0fd3642cd4adf35bf7375d433465d5a9327e461a9",
