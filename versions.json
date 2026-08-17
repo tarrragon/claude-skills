@@ -19,6 +19,10 @@
     "hash": "b4362947e6baeb94ba6b9527073c41d084898dc9cd00e4f478a31d189547ea65",
     "version": "1.0.0"
   },
+  "business-analysis": {
+    "hash": "4fc96be98ec1d54a8e54188e8aa2616fd0f44cca7d0318ee29b5c96227205df2",
+    "version": "1.4.0"
+  },
   "case-first-module-workflow": {
     "hash": "82052d3dccdf9e3b8a5dcf21a24512adc0e9e883694b9a42e52c2cd3f2026dd7",
     "version": "1.5.0"
