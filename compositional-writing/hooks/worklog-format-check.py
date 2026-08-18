@@ -10,7 +10,7 @@ PostToolUse Hook: 檢測工作日誌中表格內的問題 emoji 模式
 觸發時機: Edit/Write 操作 docs/work-logs/ 目錄下的 markdown 檔案
 行為: 警告（非阻擋），輸出問題位置到 stderr
 
-參考規範: .claude/skills/compositional-writing/references/writing-documents.md
+參考規範: .claude/skills/compositional-writing/references/writing-documents.md（portability-allow: 本 skill 自我引用，consumer 共通安裝位置）
 """
 
 import json

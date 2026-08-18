@@ -32,10 +32,10 @@ Comment Quality Assurance Hook - 註解品質保證檢查 (v3.0 多語言支援)
   - 測試檔案
   - 生成檔案
 
-配置: .claude/hooks/comment-qa-config.yaml (可選)
+配置: .claude/hooks/comment-qa-config.yaml (可選)（portability-allow: 此 skill 對消費端環境的選用性依賴，缺檔時優雅降級為預設配置）
 
 參考規範:
-- .claude/skills/compositional-writing/references/writing-code-comments.md
+- .claude/skills/compositional-writing/references/writing-code-comments.md（portability-allow: 本 skill 自我引用，consumer 共通安裝位置）
 - docs/event-driven-architecture-design.md
 
 版本: v3.0
@@ -117,7 +117,7 @@ def load_config(logger) -> dict:
     載入配置檔
 
     優先順序:
-    1. .claude/hooks/comment-qa-config.yaml
+    1. .claude/hooks/comment-qa-config.yaml（portability-allow: 此 skill 對消費端環境的選用性依賴，缺檔時優雅降級為預設配置）
     2. 預設配置（向後相容）
     """
     config_path = PROJECT_ROOT / ".claude/hooks/comment-qa-config.yaml"
