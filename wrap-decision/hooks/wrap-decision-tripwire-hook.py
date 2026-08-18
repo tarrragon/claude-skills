@@ -23,7 +23,7 @@ category 分流（W15-018）：
   reflection_trigger → 訊息前綴「[Reflection Trigger]」，引導 three-phase-reflection
 各訊號 cooldown 由 state.signals[sd.id] 獨立追蹤，不跨 category 互相壓制。
 
-唯一觸發條件來源：.claude/config/wrap-triggers.yaml（W10-052 約束）
+唯一觸發條件來源：.claude/config/wrap-triggers.yaml（W10-052 約束，portability-allow: 此 skill 對消費端環境的選用性依賴——缺該設定檔時 advisory 模式優雅降級為不觸發，非硬性中止；沿用時如需啟用訊號偵測，需提供對應設定檔）
 禁止在本檔案中硬編碼 triggers / keywords / thresholds。
 """
 
@@ -40,7 +40,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol
 
 import yaml
 
-# 加入框架共用程式庫路徑：.claude/（for `from lib import ...`）+ .claude/hooks/
+# 加入框架共用程式庫路徑：.claude/（for `from lib import ...`）+ .claude/hooks/（portability-allow: 架構性橋接至框架共用模組，consumer 端結構相同）
 _claude_dir = Path(__file__).resolve().parents[3]
 _hooks_dir = _claude_dir / "hooks"
 if _hooks_dir not in [Path(p) for p in sys.path]:

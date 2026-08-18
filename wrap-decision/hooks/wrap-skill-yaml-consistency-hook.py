@@ -8,8 +8,8 @@ WRAP SKILL↔YAML 一致性檢查 Hook — wrap-skill-yaml-consistency-hook.py
 
 觸發時機：
   - PreToolUse(Edit/Write) on:
-      .claude/skills/wrap-decision/SKILL.md
-      .claude/config/wrap-triggers.yaml
+      .claude/skills/wrap-decision/SKILL.md（portability-allow: 本 skill 自我引用，consumer 共通安裝位置）
+      .claude/config/wrap-triggers.yaml（portability-allow: 此 skill 對消費端環境的硬性依賴——AC4 缺映射檔會 exit 2 阻擋，沿用時需提供對應設定檔）
 
 檢查項目（依 W10-055.1 ANA Solution 規格）：
   AC1 Signal orphan：每個 YAML signals[].id 在映射檔 signal_to_skill_triggers 有對應 SKILL 情境（警告）
@@ -22,8 +22,8 @@ WRAP SKILL↔YAML 一致性檢查 Hook — wrap-skill-yaml-consistency-hook.py
   - 警告：exit 0 + stderr（與 wrap-decision-tripwire-hook 的 advisory 模式一致）
   - 阻擋：exit 2（僅限映射檔缺失或無法解析；其他檢查無前提）
 
-唯一觸發來源：.claude/config/wrap-triggers.yaml + 映射檔（W10-052 約束）
-觀測性：依 .claude/rules/core/observability-rules.md 規則 1-3（雙通道 stderr + logger）
+唯一觸發來源：.claude/config/wrap-triggers.yaml + 映射檔（W10-052 約束，portability-allow: 同上硬性依賴）
+觀測性：依 .claude/rules/core/observability-rules.md 規則 1-3（雙通道 stderr + logger）（portability-allow: 架構性橋接至框架 auto-load 規則）
 """
 
 import json
