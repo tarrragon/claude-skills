@@ -15,7 +15,7 @@ Ensure systematic decision-making before creating todos by requiring:
 
 | Layer            | File                                   | When Active            |
 | ---------------- | -------------------------------------- | ---------------------- |
-| **Output Style** | `.claude/output-styles/5w1h-format.md` | Always (system prompt) |<!-- portability-allow: 約定位置，本 skill 隨附的 output style 安裝點 -->
+| **Output Style** | `.claude/output-styles/5w1h-format.md` | Always (system prompt) <!-- portability-allow: 約定位置，本 skill 隨附的 output style 安裝點 --> |
 | **Hook**         | UserPromptSubmit + PreToolUse          | Each interaction       |
 | **SKILL**        | This document                          | On-demand reference    |
 
@@ -121,6 +121,6 @@ See [SKILL.md](./SKILL.md) for complete reference.
 
 | File                                                                                  | Purpose                         |
 | ------------------------------------------------------------------------------------- | ------------------------------- |
-| [Output Style](../../../.claude/output-styles/5w1h-format.md)                         | System-level format enforcement |<!-- portability-allow: 約定位置，本 skill 隨附的 output style 安裝點 -->
+| [Output Style](../../../.claude/output-styles/5w1h-format.md)                         | System-level format enforcement <!-- portability-allow: 約定位置，本 skill 隨附的 output style 安裝點 --> |
 | [SKILL.md](./SKILL.md)                                                                | Complete 5W1H reference         |
 | `5w1h-self-awareness-methodology`（各專案自有） | Full methodology                |
