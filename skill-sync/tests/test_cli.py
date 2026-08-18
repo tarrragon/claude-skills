@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -12,6 +13,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from skill_sync.cli import (  # noqa: E402
     _apply_prune,
+    _is_portable_declared,
+    _report_portability,
+    check_portability,
     _classify_sync_status,
     _extract_local_manifest,
     _has_local_override,
@@ -93,6 +97,127 @@ def test_existing_exclude_dirs_still_work():
     assert _should_exclude_file(".venv/lib/site-packages/foo.py") is True
     assert _should_exclude_file("__pycache__/cli.cpython-314.pyc") is True
     assert _should_exclude_file(".pytest_cache/v/cache/nodeids") is True
+
+
+# ---------- 憑證檔排除（0.2.1-W3-481：公開 repo 外洩防護） ----------
+
+def test_credential_dotenv_excluded():
+    assert _should_exclude_file(".env") is True
+
+
+def test_credential_dotenv_variant_excluded():
+    assert _should_exclude_file(".env.production") is True
+
+
+def test_credential_secrets_yaml_excluded():
+    assert _should_exclude_file("scripts/secrets.yaml") is True
+
+
+def test_credential_pem_suffix_excluded():
+    assert _should_exclude_file("certs/deploy.pem") is True
+
+
+def test_credential_ssh_private_key_no_suffix_excluded():
+    # id_rsa 等 SSH 私鑰慣例檔名無副檔名、不以 env/secret 起頭，
+    # suffix/prefix 判準覆蓋不到，須精確列名（PM 實測發現的附帶缺口）。
+    assert _should_exclude_file("keys/id_rsa") is True
+
+
+def test_credential_dotkeys_excluded():
+    assert _should_exclude_file("config/.keys") is True
+
+
+def test_compute_diff_excludes_credential_files_from_added(tmp_path):
+    """排除必須發生在 compute_diff（--force 繞過的是互動預覽，不是 compute_diff）。"""
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    (src / "SKILL.md").write_text("hello")
+    (src / ".env").write_text("TOKEN=1")
+    (src / ".env.production").write_text("TOKEN=1")
+    (src / "scripts").mkdir()
+    (src / "scripts" / "secrets.yaml").write_text("token: abc")
+    (src / "certs").mkdir()
+    (src / "certs" / "deploy.pem").write_text("-----BEGIN PRIVATE KEY-----")
+    (src / "keys").mkdir()
+    (src / "keys" / "id_rsa").write_text("-----BEGIN OPENSSH PRIVATE KEY-----")
+    (src / "config").mkdir()
+    (src / "config" / ".keys").write_text("token: abc")
+
+    diff = compute_diff(src, dst)
+
+    assert "SKILL.md" in diff["added"]
+    credential_rels = {
+        ".env",
+        ".env.production",
+        "scripts/secrets.yaml",
+        "certs/deploy.pem",
+        "keys/id_rsa",
+        "config/.keys",
+    }
+    assert not (credential_rels & set(diff["added"]))
+
+
+def test_compute_diff_excludes_credential_files_from_dst_only(tmp_path):
+    # dst-only 掃描也走 _should_exclude_file，憑證檔不應被列為「remote-only」
+    # 而在預覽/prune 流程中被提及（見 compute_diff 的 dst 端迴圈）。
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    (dst / ".env").write_text("TOKEN=1")
+
+    diff = compute_diff(src, dst)
+
+    assert ".env" not in diff["dst_only"]
+
+
+def test_regular_skill_file_with_env_substring_not_falsely_excluded():
+    # 防過度排除：檔名含 "env" 子字串但非 ".env." 前綴形態，不應被誤判
+    # （前綴判準要求緊接開頭的 ".env."，非任意位置的 "env" 子字串）。
+    assert _should_exclude_file("scripts/environment_helper.py") is False
+    assert _should_exclude_file("docs/openapi.yaml") is False
+
+
+# ---------- override marker 排除（0.2.1-W3-477：傳染性缺陷防護） ----------
+#
+# marker 是單一 consumer 的本地宣告，不得被 push 帶上遠端——上游一旦帶有它，
+# 所有 consumer pull 後該 skill 會永久落入 overridden、分歧回報全面靜默。
+# compute_content_hash 已用獨立寫法排除（f.name == MARKER or ...），本組測試
+# 固化 _should_exclude_file 本身也排除 marker，讓兩個消費點共用同一判定點，
+# 不再各自處置（IMP-BAL-006 同一排除語意多路徑分歧的模式）。
+
+def test_override_marker_excluded_at_skill_root():
+    assert _should_exclude_file(SKILL_SYNC_OVERRIDE_MARKER) is True
+
+
+def test_override_marker_excluded_nested():
+    assert _should_exclude_file(f"some-skill/{SKILL_SYNC_OVERRIDE_MARKER}") is True
+
+
+def test_compute_diff_excludes_override_marker_from_added(tmp_path):
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    (src / "SKILL.md").write_text("hello")
+    (src / SKILL_SYNC_OVERRIDE_MARKER).write_text("local customization notice")
+
+    diff = compute_diff(src, dst)
+
+    assert "SKILL.md" in diff["added"]
+    assert SKILL_SYNC_OVERRIDE_MARKER not in diff["added"]
+
+
+def test_compute_diff_excludes_override_marker_from_dst_only(tmp_path):
+    src = tmp_path / "src"
+    dst = tmp_path / "dst"
+    src.mkdir()
+    dst.mkdir()
+    (dst / SKILL_SYNC_OVERRIDE_MARKER).write_text("local customization notice")
+
+    diff = compute_diff(src, dst)
+
+    assert SKILL_SYNC_OVERRIDE_MARKER not in diff["dst_only"]
 
 
 def test_compute_diff_excludes_hook_logs_from_added(tmp_path):
@@ -643,6 +768,69 @@ def test_cmd_push_prune_only_deletion_still_commits(tmp_path, monkeypatch):
     assert ["push"] in git_calls
 
 
+def test_cmd_push_force_still_excludes_credential_files(tmp_path, monkeypatch):
+    """--force 只跳過互動預覽的 [y/N] 確認，不得繞過 compute_diff 的排除判準
+
+    （0.2.1-W3-481 acceptance 2：排除必須發生在 compute_diff，overlay_copy
+    只複製 diff["added"] + diff["modified"]，憑證檔不進 added 就不會被複製
+    進暫存 clone、也就不會被後續 `git add -A` 帶上）。
+    """
+    import skill_sync.cli as cli_module
+
+    skills_dir = tmp_path / "skills"
+    (skills_dir / "demo-skill").mkdir(parents=True)
+    (skills_dir / "demo-skill" / "SKILL.md").write_text("kept")
+    (skills_dir / "demo-skill" / ".env").write_text("TOKEN=leaked-if-not-excluded")
+    monkeypatch.setattr(cli_module, "get_skills_dir", lambda: skills_dir)
+
+    scratch = tmp_path / "scratch"
+    remote_skill = scratch / "repo" / "demo-skill"
+    remote_skill.mkdir(parents=True)
+    (remote_skill / "SKILL.md").write_text("outdated")
+    _stub_fixed_tempdir(monkeypatch, scratch)
+
+    git_calls, _ = _stub_git_recording(monkeypatch)
+
+    args = _RecordingArgs(name="demo-skill", prune=False, force=True)
+    cmd_push(args)
+
+    assert not (remote_skill / ".env").exists()
+    assert ["commit", "-m", "Update skill: demo-skill"] in git_calls
+    assert ["push"] in git_calls
+
+
+def test_cmd_push_never_pushes_override_marker(tmp_path, monkeypatch):
+    """0.2.1-W3-477：marker 是單一 consumer 的本地宣告，push 絕不能把它帶上遠端
+
+    ——上游一旦帶有 marker，所有 consumer pull 後該 skill 會永久落入
+    overridden、分歧回報全面靜默（單一本地宣告變成全體的靜默開關）。
+    """
+    import skill_sync.cli as cli_module
+
+    skills_dir = tmp_path / "skills"
+    (skills_dir / "demo-skill").mkdir(parents=True)
+    (skills_dir / "demo-skill" / "SKILL.md").write_text("kept")
+    (skills_dir / "demo-skill" / SKILL_SYNC_OVERRIDE_MARKER).write_text(
+        "local customization notice"
+    )
+    monkeypatch.setattr(cli_module, "get_skills_dir", lambda: skills_dir)
+
+    scratch = tmp_path / "scratch"
+    remote_skill = scratch / "repo" / "demo-skill"
+    remote_skill.mkdir(parents=True)
+    (remote_skill / "SKILL.md").write_text("outdated")
+    _stub_fixed_tempdir(monkeypatch, scratch)
+
+    git_calls, _ = _stub_git_recording(monkeypatch)
+
+    args = _RecordingArgs(name="demo-skill", prune=False, force=True)
+    cmd_push(args)
+
+    assert not (remote_skill / SKILL_SYNC_OVERRIDE_MARKER).exists()
+    assert ["commit", "-m", "Update skill: demo-skill"] in git_calls
+    assert ["push"] in git_calls
+
+
 def test_cmd_push_without_force_rejects_and_skips_deletion(tmp_path, monkeypatch):
     """非 force 模式下使用者拒絕確認時，不得刪除也不得提交。"""
     import skill_sync.cli as cli_module
@@ -895,3 +1083,132 @@ def test_update_sync_manifest_writes_hash_matching_extract_local_manifest(tmp_pa
     written = json.loads((tmp_path / "versions.json").read_text())
     assert written["wrap-decision"]["version"] == "2.5.0"
     assert written["wrap-decision"]["hash"] == compute_content_hash(skill_dir)
+
+
+# --- Portability check (W3-621) -------------------------------------------------
+
+
+def _write_portable_skill(root: Path, name: str, skill_md: str, **extra: str) -> Path:
+    skill = root / name
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(skill_md)
+    for rel, text in extra.items():
+        f = skill / (rel.replace("__", "/") + ".md")
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text)
+    return skill
+
+
+PORTABLE_FRONTMATTER = """---
+name: demo
+metadata:
+  portable: true
+---
+
+# Demo
+"""
+
+PLAIN_FRONTMATTER = """---
+name: demo
+---
+
+# Demo
+"""
+
+
+def test_portable_declaration_read_from_frontmatter(tmp_path):
+    skill = _write_portable_skill(tmp_path, "demo", PORTABLE_FRONTMATTER)
+    assert _is_portable_declared(skill) is True
+
+
+def test_missing_declaration_defaults_to_not_portable(tmp_path):
+    skill = _write_portable_skill(tmp_path, "demo", PLAIN_FRONTMATTER)
+    assert _is_portable_declared(skill) is False
+
+
+def test_consumer_path_reference_reported_with_line_number(tmp_path):
+    skill = _write_portable_skill(
+        tmp_path,
+        "demo",
+        PORTABLE_FRONTMATTER + "\nSee `.claude/pm-rules/tdd-flow.md` for the flow.\n",
+    )
+    violations = check_portability(skill)
+    assert len(violations) == 1
+    assert violations[0].kind == "consumer-path"
+    assert violations[0].line == 9
+    assert ".claude/pm-rules/tdd-flow.md" in violations[0].text
+
+
+def test_ticket_id_reported(tmp_path):
+    skill = _write_portable_skill(
+        tmp_path,
+        "demo",
+        PORTABLE_FRONTMATTER + "\n**Version**: 0.8.0 — refined (1.5.0-W5-009.7)\n",
+    )
+    violations = check_portability(skill)
+    assert [v.kind for v in violations] == ["ticket-id"]
+    assert "1.5.0-W5-009" in violations[0].text
+
+
+def test_clean_skill_has_no_violations(tmp_path):
+    skill = _write_portable_skill(
+        tmp_path,
+        "demo",
+        PORTABLE_FRONTMATTER + "\nSee [rules](./references/rules.md).\n",
+        references__rules="# Rules\n",
+    )
+    assert check_portability(skill) == []
+
+
+def test_excluded_dirs_are_not_scanned(tmp_path):
+    skill = _write_portable_skill(
+        tmp_path,
+        "demo",
+        PORTABLE_FRONTMATTER,
+        **{"references__project-integration__map": "`.claude/pm-rules/tdd-flow.md`\n"},
+    )
+    assert check_portability(skill) == []
+
+
+def test_relative_skill_internal_reference_is_not_a_violation(tmp_path):
+    skill = _write_portable_skill(
+        tmp_path,
+        "demo",
+        PORTABLE_FRONTMATTER + "\nSee `references/principles/x.md` and ./y.md.\n",
+    )
+    assert check_portability(skill) == []
+
+
+def test_push_aborts_on_declared_portable_skill_with_violations(tmp_path, monkeypatch, capsys):
+    skills = tmp_path / "skills"
+    _write_portable_skill(
+        skills,
+        "demo",
+        PORTABLE_FRONTMATTER + "\nSee `.claude/pm-rules/tdd-flow.md`.\n",
+    )
+    monkeypatch.setattr("skill_sync.cli.get_skills_dir", lambda: skills)
+    args = argparse.Namespace(name="demo", message=None, force=False, prune=False)
+
+    with pytest.raises(SystemExit) as exc:
+        cmd_push(args)
+
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "SKILL.md:9" in err
+    assert "consumer-path" in err
+
+
+def test_push_proceeds_for_undeclared_skill_and_reports_only(tmp_path, monkeypatch, capsys):
+    skills = tmp_path / "skills"
+    skill = _write_portable_skill(
+        skills,
+        "demo",
+        PLAIN_FRONTMATTER + "\nSee `.claude/pm-rules/tdd-flow.md`.\n",
+    )
+    monkeypatch.setattr("skill_sync.cli.get_skills_dir", lambda: skills)
+
+    # 閘門本身不得中止未宣告 portable 的 skill；clone 之後的行為不在本測試範圍。
+    _report_portability(skill, "demo", force=False)
+
+    err = capsys.readouterr().err
+    assert "Not declared portable" in err

@@ -32,6 +32,28 @@ EXCLUDE_DIRS = {
     "hook-logs",
 }
 
+# 憑證判準（移植自 .claude/lib/sync_exclude_manifest.py 的憑證維度）。
+#
+# 只移植判準本身，不移植整份清單：manifest 作用域是整個 .claude/ 樹，本模組
+# 作用域是單一 skill 目錄，兩者要排除的目錄集合天差地遠（如 manifest 的
+# LOCAL_ONLY_PATTERNS 含 hook-state / .claude-state 等，對單一 skill 目錄
+# 無意義）；只有「憑證」這個判準——外流即安全事故——與作用域無關，跨通道
+# 應處置一致（push 目標是公開 GitHub repo，原判準只比對 EXCLUDE_DIRS 目錄
+# 名，對憑證檔零攔截）。
+_CREDENTIAL_SUFFIXES = frozenset({".pem", ".key", ".p12", ".pfx", ".jks"})
+_CREDENTIAL_NAME_PREFIXES = frozenset({".env.", "secret"})
+# 無副檔名、不以 env/secret 開頭的憑證慣例檔名，suffix/prefix 判準覆蓋不到，
+# 須精確列名：.env 本身（前綴判準只匹配 ".env." 變體，不含裸檔名）、.keys、
+# 與 SSH 私鑰的慣例俗名（framework 通道也同樣漏檢這類，另由專屬票處理）。
+_CREDENTIAL_EXACT_NAMES = frozenset({
+    ".env",
+    ".keys",
+    "id_rsa",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+})
+
 # 標記檔存在即宣告該 skill 的本地內容為刻意客製，`pull`（全量）分歧檢查略過回報
 # （0.2.1-W3-124 acceptance 4 的宣告式 local override 決策：見 update_sync_manifest
 # 與 _classify_sync_status 的 docstring）。
@@ -83,12 +105,154 @@ class SyncStatus(NamedTuple):
 
 
 def _should_exclude_file(rel_path: str) -> bool:
-    """Check if a file path should be excluded (covers dir names, incl. nested hook-logs/)."""
-    parts = Path(rel_path).parts
-    for part in parts:
+    """Check if a file path should be excluded.
+
+    Covers dir names (incl. nested hook-logs/), credential file names, and
+    the skill-sync-override marker file.
+
+    Credentials matter here because `push` targets a public GitHub repo and
+    `--force` skips only the interactive preview, not this function (see
+    compute_diff, the sole call site feeding both overlay_copy and the
+    dst-only scan). The marker matters for the same reason via a different
+    failure mode: it is a single consumer's local declaration, and if it
+    ever reached the upstream repo, every consumer pulling afterwards would
+    have that skill silently classified `overridden`, suppressing drift
+    reports for everyone. This is the single judgment point both
+    compute_diff and compute_content_hash rely on for marker exclusion, so
+    the two paths cannot drift apart on marker handling the way they
+    previously did (compute_content_hash used to carry its own separate
+    `f.name == SKILL_SYNC_OVERRIDE_MARKER` check).
+    """
+    path = Path(rel_path)
+    if path.name == SKILL_SYNC_OVERRIDE_MARKER:
+        return True
+    for part in path.parts:
         if part in EXCLUDE_DIRS or part.endswith(".egg-info"):
             return True
+    name_lower = path.name.lower()
+    if name_lower in _CREDENTIAL_EXACT_NAMES:
+        return True
+    if path.suffix.lower() in _CREDENTIAL_SUFFIXES:
+        return True
+    if any(name_lower.startswith(prefix) for prefix in _CREDENTIAL_NAME_PREFIXES):
+        return True
     return False
+
+
+
+# --- Portability check ----------------------------------------------------------
+
+# 消費端框架路徑：canonical repo 根沒有 .claude/ 這一層，任何以它開頭的引用在
+# 另一個 consumer 端都指向不存在的檔案。
+_CONSUMER_PATH_RE = re.compile(r"\.claude/[A-Za-z0-9_./-]+")
+# 專案 ticket ID：不只是斷鏈，blog 的 skill-mirror 從全檔取最大三段數字推導版號，
+# 一個 ticket ID 就能讓它抓錯版並中斷發佈。
+_TICKET_ID_RE = re.compile(r"\b\d+\.\d+\.\d+-W\d+-\d+")
+
+
+class PortabilityViolation(NamedTuple):
+    """一處消費端專屬引用。file 為 skill 目錄內的相對路徑。"""
+
+    file: str
+    line: int
+    kind: str  # "consumer-path" | "ticket-id"
+    text: str
+
+
+def _is_portable_declared(skill_dir: Path) -> bool:
+    """讀 SKILL.md frontmatter 的 metadata.portable。
+
+    未宣告即視為未宣告 portable——框架專屬工具 skill（ticket / doc / worktree 等）
+    談 .claude/ 路徑是正當內容而非缺陷，預設嚴格會把它們全部凍結在 push 之外。
+    宣告的責任歸 skill 自己，判準因此隨 skill 走而不是靠外部清單維護。
+    """
+    skill_md = skill_dir / "SKILL.md"
+    if not skill_md.is_file():
+        return False
+    try:
+        text = skill_md.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    if not text.startswith("---"):
+        return False
+    end = text.find("\n---", 3)
+    if end == -1:
+        return False
+    front = text[3:end]
+    return re.search(r"^\s*portable:\s*true\s*$", front, re.MULTILINE) is not None
+
+
+def check_portability(skill_dir: Path) -> list[PortabilityViolation]:
+    """掃描 skill 的 markdown，回報消費端專屬引用。
+
+    只掃 .md：可攜性問題出在給人與模型讀的敘述，程式碼檔的路徑常是真實的執行期
+    依賴，兩者判準不同。排除規則沿用 _should_exclude_file，project-integration/
+    這類刻意隔離的消費端層因此不進掃描範圍。
+    """
+    violations: list[PortabilityViolation] = []
+    if not skill_dir.is_dir():
+        return violations
+    for path in sorted(skill_dir.rglob("*.md")):
+        rel = path.relative_to(skill_dir).as_posix()
+        if _should_exclude_file(rel):
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            continue
+        for lineno, line in enumerate(lines, start=1):
+            for match in _CONSUMER_PATH_RE.finditer(line):
+                violations.append(
+                    PortabilityViolation(rel, lineno, "consumer-path", match.group(0))
+                )
+            for match in _TICKET_ID_RE.finditer(line):
+                violations.append(
+                    PortabilityViolation(rel, lineno, "ticket-id", match.group(0))
+                )
+    return violations
+
+
+def _report_portability(skill_dir: Path, name: str, force: bool) -> None:
+    """push 前的可攜性閘門。
+
+    宣告 portable 的 skill 命中即中止（--force 可覆蓋但仍列出違規）；未宣告者只
+    列出摘要——存量因此可見，而既有的 push 行為不變。
+    """
+    violations = check_portability(skill_dir)
+    if not violations:
+        return
+    declared = _is_portable_declared(skill_dir)
+    kinds = {v.kind for v in violations}
+    label = " + ".join(sorted(kinds))
+
+    if not declared:
+        print(
+            f"\n  [Portability] {len(violations)} consumer-specific reference(s) "
+            f"({label}) in '{name}'. Not declared portable — reporting only.",
+            file=sys.stderr,
+        )
+        return
+
+    print(
+        f"\n  [Portability] '{name}' declares metadata.portable: true but carries "
+        f"{len(violations)} consumer-specific reference(s):",
+        file=sys.stderr,
+    )
+    for v in violations[:20]:
+        print(f"    {v.file}:{v.line}  [{v.kind}]  {v.text}", file=sys.stderr)
+    if len(violations) > 20:
+        print(f"    ... and {len(violations) - 20} more", file=sys.stderr)
+    print(
+        "  A portable skill must not name another project's files: keep the point "
+        "in the sentence and drop the path, or move the passage into "
+        "references/project-integration/ (excluded from sync).",
+        file=sys.stderr,
+    )
+    if force:
+        print("  --force given: pushing anyway.", file=sys.stderr)
+        return
+    print("  Aborted. Use --force to push regardless.", file=sys.stderr)
+    sys.exit(1)
 
 
 def get_repo_url() -> str:
@@ -132,7 +296,7 @@ def compute_content_hash(skill_dir: Path) -> str | None:
         if not f.is_file():
             continue
         rel = str(f.relative_to(skill_dir))
-        if f.name == SKILL_SYNC_OVERRIDE_MARKER or _should_exclude_file(rel):
+        if _should_exclude_file(rel):
             continue
         rel_paths.append(rel)
     rel_paths.sort()
@@ -537,6 +701,9 @@ def cmd_push(args: argparse.Namespace) -> None:
     if not source.is_dir():
         print(f"Error: local skill '{name}' not found at {source}", file=sys.stderr)
         sys.exit(1)
+
+    # 閘門放在 clone 之前：違規與遠端狀態無關，先擋下省一次完整 clone。
+    _report_portability(source, name, force)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir) / "repo"
