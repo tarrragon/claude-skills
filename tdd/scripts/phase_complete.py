@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 # 正確的跨層導入：使用相對路徑而非 sys.path.insert（架構層級邊界，見 IMP-045）
-# .claude/skills/tdd/ → .claude/lib/ 導入共用驗證器
+# .claude/skills/tdd/ → .claude/lib/ 導入共用驗證器（portability-allow: 架構性橋接至框架共用模組，consumer 端結構相同）
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "lib"))
 
 from phase_contract_validator import PhaseContractValidator, ValidationResult
@@ -49,7 +49,7 @@ def complete_phase(
     6. 若僅有 warnings，顯示提示並繼續（返回 True）
 
     Args:
-        ticket_id: Ticket ID（如 0.1.2-W1-002）
+        ticket_id: Ticket ID（格式如 major.minor.patch-W<wave>-<seq>）
         phase: Phase 代號（"1" | "2" | "3a" | "3b"）
         ticket_dir: Ticket 文件所在目錄
         contracts_path: contracts.yaml 的路徑

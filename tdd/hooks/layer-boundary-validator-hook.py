@@ -9,23 +9,23 @@ Layer 1/2 邊界驗證 Hook
 驗證 Layer 1 檔案中是否引用了 Layer 2 專案特定概念。
 
 功能：
-- 掃描 Layer 1 檔案（.claude/rules/*, .claude/skills/tdd/references/portable-*）
+- 掃描 Layer 1 檔案（.claude/rules/*, .claude/skills/tdd/references/portable-*）（portability-allow: 框架規則層與本 skill 可攜參考文件的位置說明，consumer 端結構相同）
 - 檢測 7 大禁止項：/ticket CLI、Agent 名稱、Hook 系統、決策樹、/parallel-evaluation、路徑硬編碼、Wave/Patch
 - 排除合法上下文（blockquote、程式碼區塊、HTML 註解、行內程式碼、參考連結）
 - 輸出清晰的警告訊息，不阻塊操作（exit 0）
 
 Hook 類型: PostToolUse（非阻塊）
 Matcher: Write
-監控路徑：
-  - .claude/rules/core/*.md
-  - .claude/rules/flows/*.md
-  - .claude/rules/guides/*.md
-  - .claude/rules/forbidden/*.md
-  - .claude/skills/tdd/references/portable-*.md
+監控路徑（框架規則層與本 skill 可攜參考文件，portability-allow: consumer 端結構相同）：
+  - .claude/rules/core/*.md（portability-allow: 框架規則層）
+  - .claude/rules/flows/*.md（portability-allow: 框架規則層）
+  - .claude/rules/guides/*.md（portability-allow: 框架規則層）
+  - .claude/rules/forbidden/*.md（portability-allow: 框架規則層）
+  - .claude/skills/tdd/references/portable-*.md（portability-allow: 本 skill 自我引用，consumer 共通安裝位置）
 
 使用方式:
     PostToolUse Hook 自動觸發，或手動測試:
-    echo '{"tool_name":"Write","tool_input":{"file_path":".claude/pm-rules/decision-tree.md"}}' | python3 layer-boundary-validator-hook.py
+    echo '{"tool_name":"Write","tool_input":{"file_path":".claude/rules/core/example.md"}}' | python3 layer-boundary-validator-hook.py  # portability-allow: 示範用法，任一 Layer 1 路徑皆可
 """
 
 import sys
@@ -57,7 +57,7 @@ from lib.framework_paths import get_layer1_paths, is_layer1_path as _is_layer1_p
 # 常數定義
 # ============================================================================
 
-# Layer 1 檔案路徑模式（向後相容性別名；實際來源為 .claude/config/framework-paths.yaml）
+# Layer 1 檔案路徑模式（向後相容性別名；實際來源為 .claude/config/framework-paths.yaml，portability-allow: 依賴框架共用設定層，consumer 端沿用相同框架佈局時自動存在）
 # 既有測試 / 外部引用透過 LAYER1_PATTERNS 仍可運作；維護時請改 framework-paths.yaml。
 LAYER1_PATTERNS = get_layer1_paths()
 
