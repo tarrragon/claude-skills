@@ -30,7 +30,7 @@ metadata:
 |------|------------------------------|-------------------------------|
 | 章節結構 | Purpose / Scenarios / Acceptance（Lite）或 6 區段（Full） | 概述 + 可攜性邊界原則 + A 區（邏輯契約）/ B 區（實作綁定） |
 
-**Why**：/spec validate 的 Layer 1 結構檢查針對 Purpose/Scenarios/Acceptance（或 Full 6 區段）比對區段標題，data-contract 文件遵循 `data-layer-contract-methodology.md` 的可攜性兩區（A/B）結構，兩套 schema 不相容。**Consequence**：對 data-contract 文件執行 `/spec validate` 會在 Layer 1 誤報「結構失敗」（找不到 Purpose/Scenarios/Acceptance 區段標題），該結果不反映文件真實品質，若被當真會誤導撰寫者修改成不必要的結構。**Action**：data-contract 文件的機械驗證改由 `doc validate` 子命令承接（`../doc/SKILL.md`， 落地前為人工依 `data-layer-contract-methodology.md` 檢查），禁止對其執行 `/spec validate`；已誤執行者，Layer 1「結構失敗」判定應忽略。
+**Why**：/spec validate 的 Layer 1 結構檢查針對 Purpose/Scenarios/Acceptance（或 Full 6 區段）比對區段標題，data-contract 文件遵循 `data-layer-contract-methodology.md` 的可攜性兩區（A/B）結構，兩套 schema 不相容。**Consequence**：對 data-contract 文件執行 `/spec validate` 會在 Layer 1 誤報「結構失敗」（找不到 Purpose/Scenarios/Acceptance 區段標題），該結果不反映文件真實品質，若被當真會誤導撰寫者修改成不必要的結構。**Action**：data-contract 文件的機械驗證改由 `doc validate` 子命令承接（`../doc/SKILL.md`， 落地前為人工依 `data-layer-contract-methodology.md` 檢查），禁止對其執行 `/spec validate`；已誤執行者，Layer 1「結構失敗」判定應忽略。<!-- portability-allow: 條件式引用，目標 skill 未必與本 skill 一同安裝 -->
 
 ---
 
@@ -297,7 +297,7 @@ Phase 1 中 lavender 如何使用 /spec 的完整流程，詳見該代理人定�
 - references/spec-template-lite.md - Lite 模板（3 區段）
 - references/spec-template-full.md - Full 模板（6 區段）
 - `data-layer-contract-methodology` - data-contract 文件的 A/B 兩區結構定義（`/spec validate` 不適用對象）
-- `../doc/SKILL.md` - data-contract 文件機械驗證的承接者（`doc validate`）
+- `../doc/SKILL.md` - data-contract 文件機械驗證的承接者（`doc validate`）<!-- portability-allow: 條件式引用，目標 skill 未必與本 skill 一同安裝 -->
 
 ---
 
