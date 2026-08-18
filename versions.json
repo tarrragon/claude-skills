@@ -123,8 +123,8 @@
     "version": "1.7.0"
   },
   "linux-install-debug": {
-    "hash": "c3fd76669aadb6269a06fea2fe37f6b41a44f483670ade356b387b1cebdd2bef",
-    "version": "1.16.0"
+    "hash": "2cf6e1b7d27bfa9a5b282a0dfe2d7808edee959b8cba537f70b868c3797e4bea",
+    "version": "1.17.0"
   },
   "lsp-first": {
     "hash": "95737d06dc751c5f9c668d0e2087a1d36b5ab027444cf1d3d8b18d40c8f0a025",
