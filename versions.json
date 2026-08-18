@@ -107,7 +107,7 @@
     "version": "1.2.0"
   },
   "frontend-with-playwright": {
-    "hash": "1385321447ed45dd6ada60e17c1041893532d76bda1216537ccee22076f7fd39",
+    "hash": "fedf6dc6fc5f56481a7a601a817da07ea3c1eae6c611180b62afd304c19eb624",
     "version": "0.3.0"
   },
   "golden-path-validation": {
