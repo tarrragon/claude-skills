@@ -38,20 +38,27 @@ from typing import Dict, Any, Optional, List, Set, Tuple
 _FRAMEWORK_ROOT = str(Path(__file__).resolve().parents[3])
 sys.path.insert(0, _FRAMEWORK_ROOT)
 
-from lib import (
-    setup_hook_logging,
-    run_hook_safely,
-    read_json_from_stdin,
-    get_project_root,
-    save_check_log,
-    validate_hook_input,
-    is_subagent_environment,
-    get_effort_level,
-)
+try:
+    from lib import (
+        setup_hook_logging,
+        run_hook_safely,
+        read_json_from_stdin,
+        get_project_root,
+        save_check_log,
+        validate_hook_input,
+        is_subagent_environment,
+        get_effort_level,
+    )
 
-# W17-127.1：Layer 1 路徑改由 framework_paths SSOT 提供
-# （linux 視角 SSOT 警示：避免與 agent-dispatch-validation 雙寫漂移）
-from lib.framework_paths import get_layer1_paths, is_layer1_path as _is_layer1_path_lib
+    # W17-127.1：Layer 1 路徑改由 framework_paths SSOT 提供
+    # （linux 視角 SSOT 警示：避免與 agent-dispatch-validation 雙寫漂移）
+    from lib.framework_paths import get_layer1_paths, is_layer1_path as _is_layer1_path_lib
+    _LIB_AVAILABLE = True
+except ImportError:
+    # 消費端未提供 .claude/lib/ 時優雅降級（portability-allow: 選用性依賴，
+    # 缺件優雅降級，非可攜性違規）：main() 直接印出 [WARNING] 並回報無違規，
+    # 不讓整個 Hook 在載入階段崩潰（見 main() 開頭的降級分支）。
+    _LIB_AVAILABLE = False
 
 # ============================================================================
 # 常數定義
@@ -59,7 +66,7 @@ from lib.framework_paths import get_layer1_paths, is_layer1_path as _is_layer1_p
 
 # Layer 1 檔案路徑模式（向後相容性別名；實際來源為 .claude/config/framework-paths.yaml，portability-allow: 依賴框架共用設定層，consumer 端沿用相同框架佈局時自動存在）
 # 既有測試 / 外部引用透過 LAYER1_PATTERNS 仍可運作；維護時請改 framework-paths.yaml。
-LAYER1_PATTERNS = get_layer1_paths()
+LAYER1_PATTERNS = get_layer1_paths() if _LIB_AVAILABLE else []
 
 # Exit Code
 EXIT_SUCCESS = 0
@@ -502,6 +509,16 @@ def main() -> int:
     Returns:
         int - Exit code (0=success, 1=error)
     """
+    if not _LIB_AVAILABLE:
+        print(
+            "[WARNING] Layer 1/2 邊界驗證 Hook 未執行：找不到 .claude/lib/"
+            "（含 framework_paths），此為消費端需自行提供的框架共用模組。"
+            "已跳過本次檢查。",
+            file=sys.stderr,
+        )
+        _output_success()
+        return EXIT_SUCCESS
+
     logger = setup_hook_logging("layer-boundary-validator")
 
     try:
@@ -594,4 +611,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(run_hook_safely(main, "layer-boundary-validator"))
+    if _LIB_AVAILABLE:
+        sys.exit(run_hook_safely(main, "layer-boundary-validator"))
+    else:
+        sys.exit(main())
