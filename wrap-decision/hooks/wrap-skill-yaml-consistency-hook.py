@@ -38,13 +38,20 @@ import yaml
 _FRAMEWORK_HOOKS = str(Path(__file__).resolve().parents[3] / "hooks")
 sys.path.insert(0, _FRAMEWORK_HOOKS)
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # .claude/ — for `from lib import ...`
-from lib import (  # noqa: E402
-    setup_hook_logging,
-    run_hook_safely,
-    read_json_from_stdin,
-    get_project_root,
-    extract_tool_input,
-)
+try:
+    from lib import (  # noqa: E402
+        setup_hook_logging,
+        run_hook_safely,
+        read_json_from_stdin,
+        get_project_root,
+        extract_tool_input,
+    )
+    _LIB_AVAILABLE = True
+except ImportError:
+    # 消費端未提供 .claude/lib/ 時優雅降級（portability-allow: 選用性依賴，
+    # 缺件優雅降級，非可攜性違規）：main() 開頭直接印出 [WARNING] 並
+    # return 0（見 main() 開頭的降級分支）。
+    _LIB_AVAILABLE = False
 
 
 # ============================================================================
@@ -264,6 +271,12 @@ def check_version_no_regress(project_root: Path, logger) -> List[str]:
 # ============================================================================
 
 def main() -> int:
+    if not _LIB_AVAILABLE:
+        sys.stderr.write(
+            f"{STDERR_PREFIX} 未執行：找不到 .claude/lib/，此為消費端需自行"
+            "提供的框架共用模組（一致性檢查功能停用，不影響其他操作）。\n"
+        )
+        return 0
     logger = setup_hook_logging("wrap-skill-yaml-consistency")
 
     input_data = read_json_from_stdin(logger)
@@ -318,4 +331,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(run_hook_safely(main, "wrap-skill-yaml-consistency"))
+    if _LIB_AVAILABLE:
+        sys.exit(run_hook_safely(main, "wrap-skill-yaml-consistency"))
+    else:
+        sys.exit(main())

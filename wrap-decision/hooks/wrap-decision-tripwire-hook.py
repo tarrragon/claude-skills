@@ -48,15 +48,22 @@ if _hooks_dir not in [Path(p) for p in sys.path]:
 if _claude_dir not in [Path(p) for p in sys.path]:
     sys.path.insert(0, str(_claude_dir))
 
-from lib import (
-    setup_hook_logging,
-    run_hook_safely,
-    read_json_from_stdin,
-    get_project_root,
-    parse_ticket_frontmatter,
-    find_ticket_file,
-    get_effort_level,
-)
+try:
+    from lib import (
+        setup_hook_logging,
+        run_hook_safely,
+        read_json_from_stdin,
+        get_project_root,
+        parse_ticket_frontmatter,
+        find_ticket_file,
+        get_effort_level,
+    )
+    _LIB_AVAILABLE = True
+except ImportError:
+    # 消費端未提供 .claude/lib/ 時優雅降級（portability-allow: 選用性依賴，
+    # 缺件優雅降級，非可攜性違規）：main() 開頭直接印出 [WARNING] 並
+    # return 0（advisory hook 本就以 exit 0 為常態，不阻擋任何操作）。
+    _LIB_AVAILABLE = False
 
 
 # ============================================================================
@@ -816,6 +823,13 @@ def is_pytest_environment() -> bool:
 
 
 def main() -> int:
+    if not _LIB_AVAILABLE:
+        sys.stderr.write(
+            "[WARNING] wrap-decision-tripwire-hook 未執行：找不到 .claude/lib/，"
+            "此為消費端需自行提供的框架共用模組（advisory WRAP 訊號偵測功能"
+            "停用，不影響其他操作）。\n"
+        )
+        return 0
     logger = setup_hook_logging(HOOK_NAME)
     event = read_json_from_stdin(logger)
     if event is None:
@@ -860,4 +874,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(run_hook_safely(main, HOOK_NAME))
+    if _LIB_AVAILABLE:
+        sys.exit(run_hook_safely(main, HOOK_NAME))
+    else:
+        sys.exit(main())
