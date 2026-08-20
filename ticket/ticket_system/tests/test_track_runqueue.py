@@ -5,11 +5,32 @@
 
 from __future__ import annotations
 
+import re
 from typing import Dict, List
 
 import pytest
 
 from ticket_system.commands import track_runqueue
+from ticket_system.lib.paths import get_project_root
+
+
+def _read_hook_empty_marker() -> str:
+    """讀取 session-start-scheduler-hint-hook.py 的 EMPTY_MARKER 常數值。
+
+    hook 為 PEP 723 單檔腳本無法被 import，故以讀檔 + 正規表示式解析取其
+    常數值，不在測試中硬編複本——hook 端若改變該常數，本函式回傳值同步
+    改變，任一處單獨修改即使比對測試紅燈。
+    """
+    hook_path = (
+        get_project_root()
+        / ".claude"
+        / "hooks"
+        / "session-start-scheduler-hint-hook.py"
+    )
+    source = hook_path.read_text(encoding="utf-8")
+    match = re.search(r'^EMPTY_MARKER = "([^"]+)"', source, re.MULTILINE)
+    assert match, "session-start-scheduler-hint-hook.py 未找到 EMPTY_MARKER 常數定義"
+    return match.group(1)
 
 
 def _mk(tid: str, status: str = "pending", blocked=None, priority: str = "P2",
@@ -510,6 +531,225 @@ def test_render_list_regression_case_w3_124_pattern():
 
 
 # ---------------------------------------------------------------------------
+# multi-PM 協調層 Phase 3：registry STALE session 持票 RECLAIMABLE_TAG
+# ---------------------------------------------------------------------------
+
+
+def test_render_list_marks_reclaimable_when_lease_reclaimable(monkeypatch):
+    """is_lease_reclaimable 回傳 True 的票 → list 視圖顯示 [RECLAIMABLE] tag。"""
+    stale = _mk_stale_in_progress("0.2.1-W3-500")
+    monkeypatch.setattr(
+        track_runqueue.lease, "load_registry_snapshot", lambda: ({}, object())
+    )
+    monkeypatch.setattr(
+        track_runqueue.lease, "is_lease_reclaimable",
+        lambda registry, tid, pm_registry, now: tid == "0.2.1-W3-500",
+    )
+
+    out = track_runqueue._render_list([stale], top=None, wave=None, context=None)
+
+    target_line = next(line for line in out.splitlines() if "0.2.1-W3-500" in line)
+    assert f"[{track_runqueue.RECLAIMABLE_TAG}]" in target_line
+
+
+def test_render_list_omits_reclaimable_tag_when_not_reclaimable(monkeypatch):
+    """is_lease_reclaimable 回傳 False（如 registry 未追蹤 / session 仍 FRESH）
+    → 不顯示 [RECLAIMABLE] tag。"""
+    stale = _mk_stale_in_progress("0.2.1-W3-501")
+    monkeypatch.setattr(
+        track_runqueue.lease, "load_registry_snapshot", lambda: ({}, None)
+    )
+    monkeypatch.setattr(
+        track_runqueue.lease, "is_lease_reclaimable",
+        lambda registry, tid, pm_registry, now: False,
+    )
+
+    out = track_runqueue._render_list([stale], top=None, wave=None, context=None)
+
+    target_line = next(line for line in out.splitlines() if "0.2.1-W3-501" in line)
+    assert f"[{track_runqueue.RECLAIMABLE_TAG}]" not in target_line
+
+
+def test_render_list_reclaimable_and_stale_tags_coexist(monkeypatch):
+    """STALE_TAG（票面自身時間戳）與 RECLAIMABLE_TAG（registry heartbeat）
+    判準不同，可同時出現於同一列。"""
+    stale = _mk_stale_in_progress("0.2.1-W3-502")
+    monkeypatch.setattr(
+        track_runqueue.lease, "load_registry_snapshot", lambda: ({}, object())
+    )
+    monkeypatch.setattr(
+        track_runqueue.lease, "is_lease_reclaimable",
+        lambda registry, tid, pm_registry, now: True,
+    )
+
+    out = track_runqueue._render_list([stale], top=None, wave=None, context=None)
+
+    target_line = next(line for line in out.splitlines() if "0.2.1-W3-502" in line)
+    assert f"[{track_runqueue.STALE_TAG}]" in target_line
+    assert f"[{track_runqueue.RECLAIMABLE_TAG}]" in target_line
+
+
+def test_render_list_reclaimable_check_degrades_when_registry_unavailable(monkeypatch):
+    """registry 不可用（非 git 環境等）時 load_registry_snapshot 回傳
+    pm_registry=None，is_lease_reclaimable 對任何票一律回傳 False，不阻擋
+    list 視圖輸出（降級路徑不拋例外）。"""
+    stale = _mk_stale_in_progress("0.2.1-W3-503")
+    monkeypatch.setattr(
+        track_runqueue.lease, "load_registry_snapshot",
+        lambda: ({"schema_version": 0, "sessions": {}}, None),
+    )
+
+    out = track_runqueue._render_list([stale], top=None, wave=None, context=None)
+
+    assert "0.2.1-W3-503" in out
+    target_line = next(line for line in out.splitlines() if "0.2.1-W3-503" in line)
+    assert f"[{track_runqueue.RECLAIMABLE_TAG}]" not in target_line
+
+
+# ---------------------------------------------------------------------------
+# multi-PM 協調層 Phase 3：runqueue --groups（父票設計要點 5）
+# ---------------------------------------------------------------------------
+
+
+def _mk_with_files(tid: str, files, priority: str = "P2", status: str = "pending",
+                    blocked=None) -> Dict:
+    ticket = _mk(tid, status=status, blocked=blocked, priority=priority)
+    ticket["where"] = {"files": files}
+    return ticket
+
+
+class TestRenderGroups:
+    def test_readiness_filter_matches_list_view(self):
+        """輸入集合須與 list 視圖相同（blockedBy=[] 且 pending）：in_progress
+        與仍有未解除 blocker 的票不進入群組判定。"""
+        ready = _mk_with_files("0.2.1-W3-600", ["lib/a.dart"])
+        in_progress = _mk_with_files(
+            "0.2.1-W3-601", ["lib/b.dart"], status="in_progress"
+        )
+        still_blocked = _mk_with_files(
+            "0.2.1-W3-602", ["lib/c.dart"], blocked=["0.2.1-W3-999"]
+        )
+
+        out = track_runqueue._render_groups([ready, in_progress, still_blocked])
+
+        assert "0.2.1-W3-600" in out
+        assert "0.2.1-W3-601" not in out
+        assert "0.2.1-W3-602" not in out
+
+    def test_no_conflicts_all_in_parallel_group(self):
+        a = _mk_with_files("0.2.1-W3-610", ["lib/a.dart"])
+        b = _mk_with_files("0.2.1-W3-611", ["lib/b.dart"])
+
+        out = track_runqueue._render_groups([a, b])
+
+        assert "可並行群組" in out
+        assert "0.2.1-W3-610" in out
+        assert "0.2.1-W3-611" in out
+        assert "本輪未選入可並行集合（0 票" in out
+
+    def test_conflicting_pair_one_selected_one_deferred_with_conflict_pair_shown(self):
+        """直接衝突的一對票：貪婪獨立集依輸入序選第一票入可並行群組，
+        第二票落在本輪未選入清單；衝突對仍完整顯示供人工判讀。"""
+        a = _mk_with_files("0.2.1-W3-620", ["lib/shared.dart"])
+        b = _mk_with_files("0.2.1-W3-621", ["lib/shared.dart"])
+
+        out = track_runqueue._render_groups([a, b])
+
+        assert "- 0.2.1-W3-621" in out
+        assert "0.2.1-W3-620 <-> 0.2.1-W3-621" in out
+        assert "lib/shared.dart" in out
+
+    def test_priority_ordering_preserved_into_parallel_group(self):
+        """`_render_groups` 依 priority/type/id 排序後傳入
+        `compute_parallel_groups`，parallel_group 應反映此排序（P0 優先）。"""
+        low = _mk_with_files("0.2.1-W3-630", ["lib/x.dart"], priority="P3")
+        high = _mk_with_files("0.2.1-W3-631", ["lib/y.dart"], priority="P0")
+
+        out = track_runqueue._render_groups([low, high])
+
+        idx_high = out.index("0.2.1-W3-631")
+        idx_low = out.index("0.2.1-W3-630")
+        assert idx_high < idx_low
+
+    def test_empty_ready_set_shows_message(self):
+        blocked = _mk_with_files(
+            "0.2.1-W3-640", ["lib/x.dart"], blocked=["0.2.1-W3-999"]
+        )
+
+        out = track_runqueue._render_groups([blocked])
+
+        assert "無可執行 Ticket" in out
+
+
+class TestRenderRunqueueGroupsDispatch:
+    def test_groups_flag_takes_precedence_over_format(self, monkeypatch):
+        """`--groups` 優先於 `--format`（互斥，本函式不落入 list/dag 分支）。"""
+        import argparse
+
+        a = _mk_with_files("0.2.1-W3-650", ["lib/a.dart"])
+        monkeypatch.setattr(track_runqueue, "list_tickets", lambda version: [a])
+
+        ns = argparse.Namespace(
+            format="dag", top=None, context=None, wave=None, groups=True,
+        )
+        out = track_runqueue.render_runqueue(ns, "0.2.1")
+
+        assert "=== Parallel Groups ===" in out
+
+    def test_groups_false_falls_through_to_format_list(self, monkeypatch):
+        """`groups` 屬性缺失（既有呼叫端未傳）時預設 False，維持原 list 行為。"""
+        import argparse
+
+        a = _mk("0.2.1-W3-660")
+        monkeypatch.setattr(track_runqueue, "list_tickets", lambda version: [a])
+
+        ns = argparse.Namespace(format="list", top=None, context=None, wave=None)
+        out = track_runqueue.render_runqueue(ns, "0.2.1")
+
+        assert "=== Parallel Groups ===" not in out
+        assert "可執行清單" in out
+
+    def test_execute_runqueue_groups_end_to_end(self, monkeypatch, capsys):
+        import argparse
+
+        a = _mk_with_files("0.2.1-W3-670", ["lib/shared.dart"])
+        b = _mk_with_files("0.2.1-W3-671", ["lib/shared.dart"])
+        monkeypatch.setattr(track_runqueue, "list_tickets", lambda version: [a, b])
+
+        ns = argparse.Namespace(
+            format="list", top=None, context=None, wave=None, groups=True,
+        )
+        rc = track_runqueue.execute_runqueue(ns, "0.2.1")
+
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "本輪未選入可並行集合（1 票" in out
+        assert "0.2.1-W3-670 <-> 0.2.1-W3-671" in out
+
+
+class TestRegisterRunqueueGroupsFlag:
+    def test_groups_flag_registered_and_defaults_false(self):
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="operation")
+        track_runqueue.register_runqueue(subparsers)
+
+        ns = parser.parse_args(["runqueue"])
+        assert ns.groups is False
+
+    def test_groups_flag_can_be_set(self):
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="operation")
+        track_runqueue.register_runqueue(subparsers)
+
+        ns = parser.parse_args(["runqueue", "--groups"])
+        assert ns.groups is True
+
+
+# ---------------------------------------------------------------------------
 # 0.2.1-W3-220: _get_pending_handoff_info key 語意修復
 # （target_ticket_id 同時建索引，不破壞既有以 source ticket_id 為 key 的呼叫端）
 # ---------------------------------------------------------------------------
@@ -586,3 +826,271 @@ def test_get_pending_handoff_info_no_target_ticket_id_field(tmp_path, monkeypatc
     info = track_runqueue._get_pending_handoff_info()
 
     assert list(info.keys()) == ["0.2.1-W3-100"]
+
+
+# ---------------------------------------------------------------------------
+# 0.2.1-W3-765: --topic 過濾 + list 視圖主題前綴
+# ---------------------------------------------------------------------------
+
+class TestFilterByTopic:
+    def test_topic_none_returns_all_tickets(self):
+        tickets = [_mk("0.2.1-W3-001"), _mk("0.2.1-W3-002")]
+        out = track_runqueue._filter_by_topic(tickets, None, {})
+        assert out == tickets
+
+    def test_topic_filters_to_matching_assignment_only(self):
+        tickets = [_mk("0.2.1-W3-001"), _mk("0.2.1-W3-002"), _mk("0.2.1-W3-003")]
+        assignments = {
+            "0.2.1-W3-001": "排程主題",
+            "0.2.1-W3-002": "其他主題",
+        }
+        out = track_runqueue._filter_by_topic(tickets, "排程主題", assignments)
+        assert [t["id"] for t in out] == ["0.2.1-W3-001"]
+
+    def test_topic_filters_out_unassigned_tickets(self):
+        tickets = [_mk("0.2.1-W3-001")]
+        out = track_runqueue._filter_by_topic(tickets, "排程主題", {})
+        assert out == []
+
+
+class TestRenderListTopicPrefix:
+    def test_list_line_prefixed_with_assigned_topic(self):
+        tickets = [_mk("0.2.1-W3-001", priority="P1")]
+        assignments = {"0.2.1-W3-001": "排程主題"}
+        out = track_runqueue._render_list(
+            tickets, top=None, wave=None, context=None,
+            topic_assignments_map=assignments,
+        )
+        assert "[排程主題]" in out
+
+    def test_list_line_unassigned_shows_explicit_marker_not_blank(self):
+        tickets = [_mk("0.2.1-W3-001", priority="P1")]
+        out = track_runqueue._render_list(
+            tickets, top=None, wave=None, context=None,
+            topic_assignments_map={},
+        )
+        assert f"[{track_runqueue.UNASSIGNED_TOPIC_LABEL}]" in out
+
+    def test_list_default_no_assignments_arg_uses_unassigned_marker(self):
+        """topic_assignments_map 省略（呼叫端未提供）時仍以明確標記顯示，不留空。"""
+        tickets = [_mk("0.2.1-W3-001", priority="P1")]
+        out = track_runqueue._render_list(tickets, top=None, wave=None, context=None)
+        assert f"[{track_runqueue.UNASSIGNED_TOPIC_LABEL}]" in out
+
+
+class TestRegisterRunqueueTopicFlag:
+    def test_topic_flag_registered_and_defaults_none(self):
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="operation")
+        track_runqueue.register_runqueue(subparsers)
+
+        ns = parser.parse_args(["runqueue"])
+        assert ns.topic is None
+
+    def test_topic_flag_can_be_set(self):
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="operation")
+        track_runqueue.register_runqueue(subparsers)
+
+        ns = parser.parse_args(["runqueue", "--topic", "排程主題"])
+        assert ns.topic == "排程主題"
+
+
+class TestRenderRunqueueTopicFilterEndToEnd:
+    def test_render_runqueue_topic_filters_list_output(self, monkeypatch):
+        import argparse
+
+        tickets = [_mk("0.2.1-W3-001"), _mk("0.2.1-W3-002")]
+        assignments = {"0.2.1-W3-001": "排程主題"}
+        monkeypatch.setattr(track_runqueue, "list_tickets", lambda v: tickets)
+        monkeypatch.setattr(
+            track_runqueue.topic_assignments, "list_assignments", lambda: assignments
+        )
+        monkeypatch.setattr(
+            track_runqueue, "_get_pending_handoff_info", lambda: {}
+        )
+
+        args = argparse.Namespace(
+            format="list", top=None, context=None, wave=None,
+            groups=False, topic="排程主題",
+        )
+        out = track_runqueue.render_runqueue(args, "0.2.1")
+
+        assert "0.2.1-W3-001" in out
+        assert "0.2.1-W3-002" not in out
+        assert "[排程主題]" in out
+
+    def test_render_runqueue_no_topic_arg_shows_all(self, monkeypatch):
+        """--topic 未指定（args 缺 topic 屬性，走 getattr 預設 None）不過濾。"""
+        import argparse
+
+        tickets = [_mk("0.2.1-W3-001"), _mk("0.2.1-W3-002")]
+        monkeypatch.setattr(track_runqueue, "list_tickets", lambda v: tickets)
+        monkeypatch.setattr(
+            track_runqueue.topic_assignments, "list_assignments", lambda: {}
+        )
+        monkeypatch.setattr(
+            track_runqueue, "_get_pending_handoff_info", lambda: {}
+        )
+
+        args = argparse.Namespace(
+            format="list", top=None, context=None, wave=None, groups=False,
+        )
+        out = track_runqueue.render_runqueue(args, "0.2.1")
+
+        assert "0.2.1-W3-001" in out
+        assert "0.2.1-W3-002" in out
+
+
+# ---------------------------------------------------------------------------
+# 0.2.1-W3-765 acceptance #4: session-start-scheduler-hint-hook 對 runqueue
+# stdout 的字串比對在新前綴下仍正確。hook 唯一的比對邏輯是
+# EMPTY_MARKER = "無可執行 Ticket" 子字串檢查（見該 hook _has_content），
+# 不解析逐行格式，故主題前綴不影響其判定。本測試直接複製該判定邏輯，
+# 驗證含主題前綴的 list 輸出仍被判定為「有內容」。
+# ---------------------------------------------------------------------------
+
+def test_topic_prefixed_list_output_still_detected_as_non_empty_by_hook_logic(
+    real_repo_root,
+):
+    empty_marker = _read_hook_empty_marker()
+    tickets = [_mk("0.2.1-W3-001", priority="P1")]
+    out = track_runqueue._render_list(
+        tickets, top=None, wave=None, context=None,
+        topic_assignments_map={"0.2.1-W3-001": "排程主題"},
+    )
+    has_content = bool(out and out.strip()) and empty_marker not in out
+    assert has_content is True
+
+
+# ---------------------------------------------------------------------------
+# 空清單訊息在過濾情境下的歸因（過濾排空的原因不可固定歸因 blockedBy/status，
+# 訊息須反映實際排空所在的階段：wave 過濾 / topic 過濾 / blockedBy+status）
+# ---------------------------------------------------------------------------
+
+class TestEmptyReasonAttribution:
+    def test_topic_filter_no_match_reports_topic_not_blocked_by(
+        self, monkeypatch, real_repo_root
+    ):
+        """--topic 無命中時訊息指出主題過濾為排空原因，不歸因 blockedBy 或 status。"""
+        import argparse
+
+        tickets = [_mk("0.2.1-W3-001", wave=3)]
+        monkeypatch.setattr(track_runqueue, "list_tickets", lambda v: tickets)
+        monkeypatch.setattr(
+            track_runqueue.topic_assignments, "list_assignments", lambda: {}
+        )
+        monkeypatch.setattr(
+            track_runqueue, "_get_pending_handoff_info", lambda: {}
+        )
+
+        args = argparse.Namespace(
+            format="list", top=None, context=None, wave=3,
+            topic="不存在的主題", groups=False,
+        )
+        out = track_runqueue.render_runqueue(args, "0.2.1")
+
+        assert "不存在的主題" in out
+        assert "無符合票" in out
+        assert "blockedBy 全非空或 status 非 pending" not in out
+
+    def test_wave_filter_no_match_reports_wave_not_blocked_by(self, monkeypatch):
+        """--wave 無命中時訊息指出 wave 過濾為排空原因，不歸因 blockedBy 或 status。"""
+        import argparse
+
+        tickets = [_mk("0.2.1-W3-001", wave=1)]
+        monkeypatch.setattr(track_runqueue, "list_tickets", lambda v: tickets)
+        monkeypatch.setattr(
+            track_runqueue.topic_assignments, "list_assignments", lambda: {}
+        )
+        monkeypatch.setattr(
+            track_runqueue, "_get_pending_handoff_info", lambda: {}
+        )
+
+        args = argparse.Namespace(
+            format="list", top=None, context=None, wave=99,
+            topic=None, groups=False,
+        )
+        out = track_runqueue.render_runqueue(args, "0.2.1")
+
+        assert "wave 99" in out
+        assert "無符合票" in out
+        assert "blockedBy 全非空或 status 非 pending" not in out
+
+    def test_wave_and_topic_both_matched_but_blocked_reports_original_message(
+        self, monkeypatch
+    ):
+        """wave / topic 過濾皆有命中票，僅因 blockedBy/status 排空時維持原訊息。"""
+        import argparse
+
+        tickets = [_mk("0.2.1-W3-001", wave=3, status="completed")]
+        monkeypatch.setattr(track_runqueue, "list_tickets", lambda v: tickets)
+        monkeypatch.setattr(
+            track_runqueue.topic_assignments,
+            "list_assignments",
+            lambda: {"0.2.1-W3-001": "排程主題"},
+        )
+        monkeypatch.setattr(
+            track_runqueue, "_get_pending_handoff_info", lambda: {}
+        )
+
+        args = argparse.Namespace(
+            format="list", top=None, context=None, wave=3,
+            topic="排程主題", groups=False,
+        )
+        out = track_runqueue.render_runqueue(args, "0.2.1")
+
+        assert "blockedBy 全非空或 status 非 pending" in out
+
+    def test_groups_view_topic_filter_no_match_reports_topic(self, monkeypatch):
+        """--groups 視圖下 --topic 無命中同樣歸因主題，不共用 list 視圖固定文字。"""
+        import argparse
+
+        tickets = [_mk("0.2.1-W3-001")]
+        monkeypatch.setattr(track_runqueue, "list_tickets", lambda v: tickets)
+        monkeypatch.setattr(
+            track_runqueue.topic_assignments, "list_assignments", lambda: {}
+        )
+
+        args = argparse.Namespace(
+            format="list", top=None, context=None, wave=None,
+            topic="不存在的主題", groups=True,
+        )
+        out = track_runqueue.render_runqueue(args, "0.2.1")
+
+        assert "不存在的主題" in out
+        assert "無符合票" in out
+
+    def test_all_empty_reason_messages_contain_empty_marker(
+        self, monkeypatch, real_repo_root
+    ):
+        """所有空清單訊息維持含 EMPTY_MARKER 子字串（機械化比對 hook 常數值）。"""
+        import argparse
+
+        empty_marker = _read_hook_empty_marker()
+        monkeypatch.setattr(track_runqueue, "list_tickets", lambda v: [])
+        monkeypatch.setattr(
+            track_runqueue.topic_assignments, "list_assignments", lambda: {}
+        )
+        monkeypatch.setattr(
+            track_runqueue, "_get_pending_handoff_info", lambda: {}
+        )
+
+        for wave, topic in [(None, None), (3, None), (None, "某主題"), (3, "某主題")]:
+            args = argparse.Namespace(
+                format="list", top=None, context=None, wave=wave,
+                topic=topic, groups=False,
+            )
+            out = track_runqueue.render_runqueue(args, "0.2.1")
+            assert empty_marker in out
+
+        args_groups = argparse.Namespace(
+            format="list", top=None, context=None, wave=None,
+            topic=None, groups=True,
+        )
+        out_groups = track_runqueue.render_runqueue(args_groups, "0.2.1")
+        assert empty_marker in out_groups
