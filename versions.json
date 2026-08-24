@@ -150,7 +150,7 @@
     "hash": "d75eb2c9bfc3c29b14cf4f48cab9d83ea7b6aa044db89ab78b5f97f08341944d"
   },
   "parallel-evaluation": {
-    "hash": "27de2b9858c67a71ac10eb493f180b8f88e0af0d765e905910bae91019881581",
+    "hash": "621a976a49ae7e2cf6a890426da03f195dca74bc3c1c248c0efab86fd46ecde0",
     "version": "1.3.0"
   },
   "pre-fix-eval": {
