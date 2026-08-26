@@ -230,8 +230,8 @@
     "version": "1.4.1"
   },
   "verification-driven-cli": {
-    "hash": "de850eced497b1791fe24b5d05ed6b9a1f4235a852627021a41751b5fb473cdd",
-    "version": "1.2.0"
+    "hash": "0557c815aa5380d76ea8e296331acdbf5793ad603c89c25231595b7f0c0fd52c",
+    "version": "1.2.1"
   },
   "version-bootstrap": {
     "hash": "ef4afe0899021534eecc8b8ea9ba138ead40c606a78512789fc3e7ec0556cf9d",
@@ -246,8 +246,8 @@
     "version": "1.1.0"
   },
   "wrap-decision": {
-    "hash": "92ba0d72d00a018920d3a1f8595be94fecef08338c206887abe3cdd46343eaa3",
-    "version": "2.11.0"
+    "hash": "e6c909c66a54c7d969d191ec38cbe4a2c4d026e4800510c6b3558d65c003f78a",
+    "version": "2.10.2"
   },
   "zellij": {
     "hash": "3b05031c6bdd73ef35142ee3ca216a8675719b48b5f484b486bb86ce5bbf65c3",
