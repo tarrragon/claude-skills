@@ -2,6 +2,7 @@
 name: spec
 description: "需求完善度品質閘門。Use for: (1) Phase 1 開始時初始化功能規格骨架 (/spec init), (2) 驗證功能規格的需求完善度 (/spec validate), (3) 判斷需求是否足夠清晰可進入實作。Use when: Phase 1 功能設計代理人在進行功能設計時，作為內部工具使用。不是流程入口——/tdd 管流程編排，/spec 管產出物品質。"
 metadata:
+  version: 1.6.1
   portable: true
 
 ---
@@ -291,7 +292,7 @@ Phase 1 中 lavender 如何使用 /spec 的完整流程，詳見該代理人定�
 
 ## 相關文件
 
-- 若專案已採用 `tdd` skill：spec 產出的骨架與未回答問題清單可銜接進 TDD 的流程編排，詳見 tdd skill 的說明（若已安裝）。若未採用，spec 仍可獨立產出規格骨架供任何流程消費，只是不會有自動銜接的階段轉換
+- `../tdd/SKILL.md` - TDD 流程工具（流程編排；同專案若也安裝 tdd）
 - Phase 1 功能設計代理人的定義 - /spec 的使用者（各專案自有）
 - 專案的 TDD 流程定義文件
 - references/spec-template-lite.md - Lite 模板（3 區段）
