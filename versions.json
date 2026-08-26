@@ -147,7 +147,8 @@
     "version": "1.52.1"
   },
   "neurodivergent-output": {
-    "hash": "d75eb2c9bfc3c29b14cf4f48cab9d83ea7b6aa044db89ab78b5f97f08341944d"
+    "hash": "becec20369f6fdfe5ee0ead61cd8cd3332feb08356990a1d0fbbac9e6e16a69f",
+    "version": "1.8.0"
   },
   "parallel-evaluation": {
     "hash": "621a976a49ae7e2cf6a890426da03f195dca74bc3c1c248c0efab86fd46ecde0",
