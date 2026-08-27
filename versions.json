@@ -102,6 +102,9 @@
     "hash": "6fc7767df24e1d5064a8d2094c971cc3c9899445db7e33c39233b1c16536e292",
     "version": "2.2.0"
   },
+  "foundation-design": {
+    "hash": "7e3e32a76f14b3a91b12e13ede9e3f66fadeafb97444d56bd2d24beec4545cfb"
+  },
   "framework-issue": {
     "hash": "c6f732b7dabff020bb3fe9913b5a123edbbe7cf484386eb8ae2ac63e1b104be5",
     "version": "1.2.0"
