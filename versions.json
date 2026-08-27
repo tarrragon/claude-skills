@@ -247,7 +247,8 @@
     "version": "2.1.0"
   },
   "version-sequencing": {
-    "hash": "d56867a893b73487ff9ead37f5305eab7b0afc52befbabb5a3c2eb243a2ad6af"
+    "hash": "bc26a11ecab77b7f165899467bd9af3aace571d49bb78f798ef261eb9db9d8ad",
+    "version": "3.1.0"
   },
   "worktree": {
     "hash": "0ba29dcadc7e5077bc5fc8b734ac4d804f9a111c55116a7910262e230deb79a6",
