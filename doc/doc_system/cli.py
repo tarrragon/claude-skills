@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from doc_system.commands import query, list_cmd, nav, domain, status, test_map, create, update, batch_init, uc, validate
+from doc_system.commands import query, list_cmd, nav, domain, status, test_map, create, update, batch_init, uc, validate, schema
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -57,7 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser = subparsers.add_parser("create", help="從模板建立新文件")
     create_parser.add_argument(
         "type",
-        choices=["proposal", "spec", "usecase", "data-contract"],
+        choices=["proposal", "spec", "usecase", "data-contract", "event"],
         help="文件類型",
     )
     create_parser.add_argument("id", nargs="?", default=None, help="文件 ID（省略則自動分配下一個序號）")
@@ -65,15 +65,20 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument(
         "--domain",
         default=None,
-        help="spec/data-contract 的 domain 子目錄（僅需要 domain 的類型需要）",
+        help="spec/data-contract/event 的 domain 子目錄（僅需要 domain 的類型需要）",
     )
 
     # next-id
     next_id_parser = subparsers.add_parser("next-id", help="唯讀查詢下一個可分配的 ID（不建立檔案）")
     next_id_parser.add_argument(
         "type",
-        choices=["proposal", "spec", "usecase", "data-contract"],
+        choices=["proposal", "spec", "usecase", "data-contract", "event"],
         help="文件類型",
+    )
+    next_id_parser.add_argument(
+        "--domain",
+        default=None,
+        help="event 型別為 domain-scoped 配號，必填",
     )
 
     # batch-init
@@ -146,6 +151,21 @@ def build_parser() -> argparse.ArgumentParser:
     ac_parser.add_argument("ticket_id", help="Ticket ID（如 0.38.1-W1-024）")
     ac_parser.add_argument("--json", action="store_true", help="以 JSON 格式輸出（供 dispatch-validate 消費）")
 
+    # schema（子命令群組：export）
+    schema_parser = subparsers.add_parser(
+        "schema", help="圖譜型別表機器可讀匯出（SSOT 為 tracking_schema.py）"
+    )
+    schema_subparsers = schema_parser.add_subparsers(dest="schema_command")
+
+    schema_export_parser = schema_subparsers.add_parser(
+        "export", help="從 tracking_schema.py 產生圖譜型別表 JSON"
+    )
+    schema_export_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="印出 JSON 至 stdout（不寫檔）；省略則寫入 tracking_schema.json 並印出路徑",
+    )
+
     return parser
 
 
@@ -163,6 +183,7 @@ COMMAND_HANDLERS = {
     "uc": uc.execute,
     "validate": validate.execute,
     "validate-filenames": validate.execute_filenames,
+    "schema": schema.execute,
 }
 
 
