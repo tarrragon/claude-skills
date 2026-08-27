@@ -103,7 +103,8 @@
     "version": "2.2.0"
   },
   "foundation-design": {
-    "hash": "4ba77c4f6e397389724cf3bbde834cb899bd83c6e762d9d6b96f217e90224d51"
+    "hash": "28ec784fa62811cf9c96e4b585ba0c76980b35178d0062d7cfcf64e8d469401f",
+    "version": "5.0.0"
   },
   "framework-issue": {
     "hash": "c6f732b7dabff020bb3fe9913b5a123edbbe7cf484386eb8ae2ac63e1b104be5",
