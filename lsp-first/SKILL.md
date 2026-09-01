@@ -1,6 +1,8 @@
 ---
 name: lsp-first
 description: "LSP 優先開發策略工具。Use for: (1) 查詢 LSP 操作指令, (2) 配置新語言 LSP 插件, (3) LSP vs MCP 工具選擇決策, (4) 自建 LSP 插件指南。Use when: 需要搜尋符號/定義/引用、想知道 LSP 和 MCP Serena 各自適合什麼場景、新增語言支援需要配置 LSP 時。"
+metadata:
+  version: 1.0.0
 ---
 
 # LSP 優先開發策略
@@ -42,7 +44,9 @@ description: "LSP 優先開發策略工具。Use for: (1) 查詢 LSP 操作指�
 
 - **檢查腳本**: `.claude/hooks/lsp-environment-check.py`
 - **配置檔案**: `.claude/hooks/lsp-check-config.json`
-- **整合位置**: `.claude/hooks/startup-check-hook.sh` (步驟 6.6)
+- **觸發方式**: `settings.json` 的 SessionStart 事件直接註冊 `lsp-environment-check.py`
+
+> 原記載的整合位置 `.claude/hooks/startup-check-hook.sh`（步驟 6.6）已不存在——LSP 檢查已改為獨立註冊的 SessionStart hook，不再是啟動 shell 腳本中的一個步驟。2026-08-22 文件複查更正。<!-- broken-link-exempt: 本行為更正說明，其內容正是在陳述該腳本已不存在，路徑不存在是預期的 -->
 
 ---
 
@@ -127,5 +131,4 @@ Dart MCP 和 Serena MCP 的工具列表與使用建議：`/search-tools-guide`
 
 ---
 
-**Last Updated**: 2026-03-02
-**Version**: 1.0.0
+版本紀錄在同目錄的 `CHANGELOG.md`。
