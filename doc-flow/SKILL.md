@@ -1,6 +1,8 @@
 ---
 name: doc-flow
 description: "Manages project documentation system including CHANGELOG, worklog, tickets, error-patterns, and todolist. Use for: (1) worklog initialization and updates, (2) todolist management, (3) version collaboration workflows, (4) documentation consistency checks"
+metadata:
+  version: 1.0.0
 ---
 
 # Doc-Flow SKILL
@@ -199,10 +201,9 @@ docs/
 - 工作流程整合：`references/workflow-integration.md`
 - 方法論：`.claude/methodologies/five-document-system-methodology.md`
 - 規則：`.claude/references/document-system.md`
-- Worklog 模板：`.claude/skills/doc-flow/templates/worklog.md.template`<!-- broken-link-exempt: 目標為 .md.template 檔，掃描器 regex 擷取至 .md 截斷誤報 -->
+- Worklog 模板：`.claude/skills/doc-flow/templates/worklog.md.template`
 - Todolist 模板：`.claude/skills/doc-flow/templates/todolist.yaml.template`
 
 ---
 
-**Last Updated**: 2026-04-01
-**Version**: 1.0.0
+版本紀錄在同目錄的 `CHANGELOG.md`。
