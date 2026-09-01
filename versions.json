@@ -11,7 +11,8 @@
     "version": "1.0.0"
   },
   "broken-link-check": {
-    "hash": "a89c44f96dbffea6409403642f8a702762865c9941e34c7a423bd001e6d41410"
+    "hash": "778f80533337ab204f009da8d1a7a70378550a498af2eabb10cfbc91134709cd",
+    "version": "2.3.0"
   },
   "bulk-evaluate": {
     "hash": "b6751a80eadc3cea8621401ef62a38d4d648ceff0f3a53895c89856439d78659",
