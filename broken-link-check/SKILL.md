@@ -2,7 +2,7 @@
 name: broken-link-check
 description: "broken-link 偵測工具。掃描 .claude/ 目錄所有 Markdown 文件中的路徑引用，偵測失效連結。Use for: (1) 一次性掃描所有 broken links, (2) 搭配 /loop 定期監控, (3) 修改規則/方法論/代理人文件後驗證路徑完整性。Use when: user runs /broken-link-check, 或搭配 /loop 定期執行, 或發現 broken link 錯誤後。"
 metadata:
-  version: 2.2.0
+  version: 2.2.1
 ---
 
 # broken-link-check
@@ -126,6 +126,4 @@ CLI 已內建以下規則，本節僅供閱讀輸出時對照，非需手動執�
 
 ---
 
-**Version**: 2.2.0
-**Last Updated**: 2026-08-18
-**Source**: broken links 後置預防機制；1.0.0-W8-030.1 改路由至 scan_links.py 確定性 CLI 作權威 gate，手動流程降級為非權威 fallback；1.0.0-W8-049 新增 documented-error 豁免 marker（excluded_documented 類別 + `--include-documented` 旋鈕），case-study 內刻意記錄的不存在路徑顯式 opt-in 豁免；新增 `--scan-root` 可疊加額外掃描子樹（如 `docs`），預設行為不變（向後相容）
+版本紀錄在同目錄的 `CHANGELOG.md`。
