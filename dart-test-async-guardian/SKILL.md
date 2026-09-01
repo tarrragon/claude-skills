@@ -1,6 +1,8 @@
 ---
 name: dart-test-async-guardian
 description: "Flutter/Dart 測試異步資源管理守護者。用於：(1) 診斷測試卡住問題，(2) 審查測試程式碼中的異步資源清理，(3) 提供 tearDown 最佳實踐，(4) 掃描潛在的資源洩漏風險。觸發場景：測試卡住、撰寫新測試、Code Review 測試程式碼、執行 flutter test 前自動掃描。"
+metadata:
+  version: 1.0.0
 ---
 
 # Test Async Guardian
@@ -191,10 +193,13 @@ mcp__dart__run_tests (無 paths 參數)
 mcp__dart__run_tests(roots: [{"root": "file:///path", "paths": ["test/domains/"]}])
 mcp__dart__run_tests(roots: [{"root": "file:///path", "paths": ["test/unit/core/"]}])
 
-# [OK] 推薦 - 全量測試使用 Bash（最穩定）
-flutter test --reporter compact
-./.claude/hooks/test-summary.sh
+# [OK] 推薦 - 全量測試使用 Bash（最穩定），直接管道限制輸出
+flutter test --reporter compact 2>&1 | tail -20
 ```
+
+> 現行慣例改為直接管道限制輸出（見 `.claude/rules/core/bash-tool-usage-rules.md` 規則二）。
+>
+> 附註：`.claude/hooks/test-summary.sh` 已刪除，2026-08-22 文件複查更正。<!-- broken-link-exempt: 本行為更正說明，其內容正是在陳述該腳本已刪除，路徑不存在是預期的 -->
 
 **適用場景對照**：
 | 測試範圍 | MCP run_tests | flutter test |
@@ -284,5 +289,4 @@ uv run .claude/skills/dart-test-async-guardian/scripts/async_resource_scanner.py
 
 ---
 
-**Last Updated**: 2026-03-02
-**Version**: 1.0.0
+版本紀錄在同目錄的 `CHANGELOG.md`。
