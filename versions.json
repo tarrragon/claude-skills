@@ -85,8 +85,7 @@
     "hash": "d30b1f5eaa2bda00c1580184592c9066328076e54888fe57eb9788591b06c733"
   },
   "framework-issue": {
-    "hash": "c6f732b7dabff020bb3fe9913b5a123edbbe7cf484386eb8ae2ac63e1b104be5",
-    "version": "1.2.0"
+    "hash": "13c6d021978c7190413e8b7205e61dba53b014c2b697ee48eadf74e9328eaf0d"
   },
   "frontend-with-playwright": {
     "hash": "6ed40c434b5b18aeb928af61996d6441bcf07bcf3e7f8b0201e83c98d6b114e3"
