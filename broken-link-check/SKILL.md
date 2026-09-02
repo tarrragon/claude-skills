@@ -57,7 +57,7 @@ python3 .claude/skills/broken-link-check/scan_links.py . --scan-root docs
 
 覆寫旋鈕用於 triage/debug，gate 預設一律不加 flag。
 
-### documented-error 豁免 marker（W8-049）
+### documented-error 豁免 marker
 
 error-pattern 案例表會刻意記錄不存在的路徑——例如 confabulation 案例的「錯誤參照」欄、或已遷移/刪除檔案的歷史軌跡。這些路徑的文獻價值正在於保留原貌，redirect/刪除會毀損案例資料。在含該引用的行尾（或同 table cell 內）加上行內 marker，scanner 即將該行所有引用歸 `excluded_documented` 不計 broken：
 
@@ -128,8 +128,8 @@ CLI 已內建以下規則，本節僅供閱讀輸出時對照，非需手動執�
 |------|------|------|
 | `@.claude/path/file.md` | `@.claude/pm-rules/decision-tree.md` | repo root |
 | `.claude/path/file.md` | `.claude/agents/incident-responder.md` | repo root |
-| `../path/file.md` | `../agents/lavender-interface-designer.md` | 引用文件所在目錄 <!-- broken-link-exempt: 格式示範範例路徑，非真實引用（W2-011 A 類） --> |
-| `./path/file.md` | `./references/detail.md` | 引用文件所在目錄 <!-- broken-link-exempt: 格式示範範例路徑，非真實引用（W2-011 A 類） --> |
+| `../path/file.md` | `../agents/lavender-interface-designer.md` | 引用文件所在目錄 <!-- broken-link-exempt: 格式示範範例路徑，非真實引用（A 類） --> |
+| `./path/file.md` | `./references/detail.md` | 引用文件所在目錄 <!-- broken-link-exempt: 格式示範範例路徑，非真實引用（A 類） --> |
 
 排除：`http(s)://`（外部 URL）、`#section`（錨點）、預設四旋鈕涵蓋的程式碼區塊 / 備份目錄 / placeholder 範例 / documented-error marker 行。
 
