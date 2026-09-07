@@ -13,8 +13,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from skill_sync.cli import (  # noqa: E402
     _apply_prune,
+    _check_push_revert,
+    _check_suspect_revert,
     _diff_line_counts,
     _diverge_warning,
+    _new_line_numbers_from_diff,
     _extract_python_narrative_text,
     _is_portable_declared,
     _read_sync_base,
@@ -51,6 +54,7 @@ from skill_sync.cli import (  # noqa: E402
     PortabilityViolation,
     print_diff_preview,
     prune_dst_only,
+    scan_push_for_banned_terms,
     SKILL_SYNC_BASE_MARKER,
     SKILL_SYNC_OVERRIDE_MARKER,
     sync_status_report,
@@ -1506,6 +1510,7 @@ def test_public_contract_names_exist_for_consumers(tmp_path, monkeypatch):
         "pull_command",
         "push_command",
         "direction",
+        "suspect_revert_commit",
     )
 
 
@@ -1853,6 +1858,307 @@ def test_diverge_warning_conflict_mentions_both_sides():
     assert "independently" in warning
 
 
+# --- SUSPECT REVERT（0.2.1-W3-1302：git log 祖先關係偵測回退） ---------------
+#
+# 三方比對（_resolve_diverge_direction）只判斷「哪一側自 base 後移動過」，
+# 不判斷「移動後的內容是否仍是 base 的超集」。一個沒有合法 .skill-sync-base
+# marker 的推送方（如從未透過本 CLI 同步過的既有消費者）用舊副本覆蓋
+# canonical 時，另一個持有合法 marker 的消費者看到的是字面正確、語意錯誤的
+# "pull"：remote 確實移動過，只是移動方向是倒退。_check_suspect_revert
+# 用 canonical 既有的 git 樹狀物件雜湊補上這道檢查，不需新增持久化格式。
+
+
+def _git(args: list[str], cwd) -> None:
+    __import__("subprocess").run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+def _init_bare_with_head(bare: Path) -> None:
+    _git(["init", "--bare", "-q", str(bare)], cwd=None)
+    _git(["symbolic-ref", "HEAD", "refs/heads/main"], cwd=bare)
+
+
+def _init_consumer(consumer_dir: Path) -> None:
+    consumer_dir.mkdir(parents=True, exist_ok=True)
+    _git(["init", "-q", str(consumer_dir)], cwd=None)
+    _git(["config", "user.email", "test@example.com"], cwd=consumer_dir)
+    _git(["config", "user.name", "test"], cwd=consumer_dir)
+
+
+def test_check_suspect_revert_detects_content_matching_older_commit(tmp_path):
+    """單元測試：直接對一個真實 bare repo 驗證 _check_suspect_revert 本身
+    （不經過完整 push/pull 流程）。v1 -> v2 -> v1（回退）三次提交後，
+    v1 的樹狀雜湊在較早的提交中已經出現過，須命中。"""
+    bare = tmp_path / "bare.git"
+    _init_bare_with_head(bare)
+    seed = tmp_path / "seed"
+    _init_consumer(seed)
+
+    skill_dir = seed / "demo-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("v1\n")
+    _git(["add", "-A"], cwd=seed)
+    _git(["commit", "-q", "-m", "v1"], cwd=seed)
+    _git(["push", "-q", str(bare), "HEAD:main"], cwd=seed)
+
+    (skill_dir / "SKILL.md").write_text("v2\n")
+    _git(["add", "-A"], cwd=seed)
+    _git(["commit", "-q", "-m", "v2"], cwd=seed)
+    _git(["push", "-q", str(bare), "HEAD:main"], cwd=seed)
+
+    (skill_dir / "SKILL.md").write_text("v1\n")  # 回退：內容與第一次提交相同
+    _git(["add", "-A"], cwd=seed)
+    _git(["commit", "-q", "-m", "revert to v1"], cwd=seed)
+    _git(["push", "-q", str(bare), "HEAD:main"], cwd=seed)
+
+    result = _check_suspect_revert(str(bare), "demo-skill")
+
+    assert result is not None
+    assert "(" in result and ")" in result  # 短 SHA + 時間戳格式
+
+
+def test_check_suspect_revert_none_when_content_genuinely_new(tmp_path):
+    """v1 -> v2，remote 目前是 v2，不是任何更舊提交的重複：不應誤報。"""
+    bare = tmp_path / "bare.git"
+    _init_bare_with_head(bare)
+    seed = tmp_path / "seed"
+    _init_consumer(seed)
+
+    skill_dir = seed / "demo-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("v1\n")
+    _git(["add", "-A"], cwd=seed)
+    _git(["commit", "-q", "-m", "v1"], cwd=seed)
+    _git(["push", "-q", str(bare), "HEAD:main"], cwd=seed)
+
+    (skill_dir / "SKILL.md").write_text("v2\n")
+    _git(["add", "-A"], cwd=seed)
+    _git(["commit", "-q", "-m", "v2"], cwd=seed)
+    _git(["push", "-q", str(bare), "HEAD:main"], cwd=seed)
+
+    assert _check_suspect_revert(str(bare), "demo-skill") is None
+
+
+def test_check_suspect_revert_none_when_only_one_commit(tmp_path):
+    """只有一筆歷史（首次推送）：沒有「更舊」可比對，不誤報。"""
+    bare = tmp_path / "bare.git"
+    _init_bare_with_head(bare)
+    seed = tmp_path / "seed"
+    _init_consumer(seed)
+
+    skill_dir = seed / "demo-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("v1\n")
+    _git(["add", "-A"], cwd=seed)
+    _git(["commit", "-q", "-m", "v1"], cwd=seed)
+    _git(["push", "-q", str(bare), "HEAD:main"], cwd=seed)
+
+    assert _check_suspect_revert(str(bare), "demo-skill") is None
+
+
+def test_check_suspect_revert_none_on_clone_failure(tmp_path):
+    """repo_url 不存在：吞下例外回傳 None，不讓報告連帶失敗。"""
+    assert _check_suspect_revert(str(tmp_path / "does-not-exist"), "demo-skill") is None
+
+
+# --- _check_push_revert（0.2.1-W3-1303：push 端縱深防禦） --------------------
+#
+# 與 _check_suspect_revert 共用 _cloned_skill_history 走訪歷史，但比對對象
+# 是「本地檔案系統內容」而非「remote 現況」，不能用樹狀雜湊直接比對，改為
+# 逐一 checkout 歷史提交後用 compute_content_hash 比對。
+
+
+def test_check_push_revert_detects_local_content_matching_older_commit(tmp_path):
+    """v1 -> v2 -> v3；本地內容等於 v1（比 HEAD 更舊兩步）：須命中。"""
+    bare = tmp_path / "bare.git"
+    _init_bare_with_head(bare)
+    seed = tmp_path / "seed"
+    _init_consumer(seed)
+
+    skill_dir = seed / "demo-skill"
+    skill_dir.mkdir()
+    for body in ("v1", "v2", "v3"):
+        (skill_dir / "SKILL.md").write_text(f"{body}\n")
+        _git(["add", "-A"], cwd=seed)
+        _git(["commit", "-q", "-m", body], cwd=seed)
+        _git(["push", "-q", str(bare), "HEAD:main"], cwd=seed)
+
+    local_dir = tmp_path / "local" / "demo-skill"
+    local_dir.mkdir(parents=True)
+    (local_dir / "SKILL.md").write_text("v1\n")
+    local_hash = compute_content_hash(local_dir)
+
+    result = _check_push_revert(str(bare), "demo-skill", local_hash)
+
+    assert result is not None
+    assert "(" in result and ")" in result
+
+
+def test_check_push_revert_none_when_local_matches_latest_commit(tmp_path):
+    """本地內容等於最新提交（HEAD）：不是回退，交由既有機制處理，本函式不命中。"""
+    bare = tmp_path / "bare.git"
+    _init_bare_with_head(bare)
+    seed = tmp_path / "seed"
+    _init_consumer(seed)
+
+    skill_dir = seed / "demo-skill"
+    skill_dir.mkdir()
+    for body in ("v1", "v2"):
+        (skill_dir / "SKILL.md").write_text(f"{body}\n")
+        _git(["add", "-A"], cwd=seed)
+        _git(["commit", "-q", "-m", body], cwd=seed)
+        _git(["push", "-q", str(bare), "HEAD:main"], cwd=seed)
+
+    local_dir = tmp_path / "local" / "demo-skill"
+    local_dir.mkdir(parents=True)
+    (local_dir / "SKILL.md").write_text("v2\n")  # 等於 HEAD
+    local_hash = compute_content_hash(local_dir)
+
+    assert _check_push_revert(str(bare), "demo-skill", local_hash) is None
+
+
+def test_check_push_revert_none_when_content_genuinely_new(tmp_path):
+    bare = tmp_path / "bare.git"
+    _init_bare_with_head(bare)
+    seed = tmp_path / "seed"
+    _init_consumer(seed)
+
+    skill_dir = seed / "demo-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text("v1\n")
+    _git(["add", "-A"], cwd=seed)
+    _git(["commit", "-q", "-m", "v1"], cwd=seed)
+    _git(["push", "-q", str(bare), "HEAD:main"], cwd=seed)
+
+    local_dir = tmp_path / "local" / "demo-skill"
+    local_dir.mkdir(parents=True)
+    (local_dir / "SKILL.md").write_text("brand new content\n")
+    local_hash = compute_content_hash(local_dir)
+
+    assert _check_push_revert(str(bare), "demo-skill", local_hash) is None
+
+
+def test_check_push_revert_none_on_clone_failure(tmp_path):
+    assert _check_push_revert(str(tmp_path / "does-not-exist"), "demo-skill", "abc") is None
+
+
+def test_cmd_push_warns_on_revert_when_no_sync_base_recorded(tmp_path, monkeypatch, capsys):
+    """整合測試，重現 0.2.1-W3-1132 場景一：乙無合法 marker 拿舊副本
+    push --force 覆蓋，push 過程須印出方向警告而非靜默。"""
+    bare = tmp_path / "bare.git"
+    _init_bare_with_head(bare)
+    jia = tmp_path / "jia"
+    yi = tmp_path / "yi"
+    for consumer in (jia, yi):
+        _init_consumer(consumer)
+        (consumer / ".claude" / "skills").mkdir(parents=True)
+
+    monkeypatch.setenv("SKILL_SYNC_REPO", str(bare))
+    import skill_sync.cli as cli_module
+
+    def push_in(consumer_skills: Path, version: str, body: str, message: str) -> None:
+        _write_skill_with_frontmatter_version(consumer_skills, "demo-skill", version, body)
+        monkeypatch.setattr(cli_module, "get_skills_dir", lambda: consumer_skills)
+        cli_module.cmd_push(
+            argparse.Namespace(name="demo-skill", message=message, force=True, prune=False)
+        )
+
+    jia_skills = jia / ".claude" / "skills"
+    yi_skills = yi / ".claude" / "skills"
+
+    push_in(jia_skills, "1.0.0", "body v1", "v1")
+    _write_skill_with_frontmatter_version(yi_skills, "demo-skill", "1.0.0", "body v1")  # 乙存底，無 marker
+    push_in(jia_skills, "1.1.0", "body v2", "v2")
+
+    monkeypatch.setattr(cli_module, "get_skills_dir", lambda: yi_skills)
+    cli_module.cmd_push(
+        argparse.Namespace(name="demo-skill", message="yi accidental revert", force=True, prune=False)
+    )
+
+    err = capsys.readouterr().err
+    assert "WARNING" in err
+    assert "matches an older historical version" in err
+    assert "--force ignored" in err
+
+
+def test_cmd_push_skips_revert_check_when_sync_base_exists(tmp_path, monkeypatch):
+    """acceptance 2：有合法 marker 時 _check_push_revert 完全不被呼叫——
+    既有三態判定（_print_divergence_warning）已正確處理，不重複查詢。"""
+    import skill_sync.cli as cli_module
+
+    called = []
+    monkeypatch.setattr(
+        cli_module, "_check_push_revert", lambda *a, **k: called.append(1) or None
+    )
+
+    skills_dir = tmp_path / "skills"
+    local_skill = skills_dir / "demo-skill"
+    local_skill.mkdir(parents=True)
+    (local_skill / "SKILL.md").write_text("content\n")
+    _write_sync_base(local_skill, compute_content_hash(local_skill))  # 合法 marker
+    monkeypatch.setattr(cli_module, "get_skills_dir", lambda: skills_dir)
+
+    scratch = tmp_path / "scratch"
+    remote_skill = scratch / "repo" / "demo-skill"
+    remote_skill.mkdir(parents=True)
+    (remote_skill / "SKILL.md").write_text("content\n")  # 與本地相同，無變更
+    _stub_fixed_tempdir(monkeypatch, scratch)
+    _stub_git_recording(monkeypatch)
+
+    args = _RecordingArgs(name="demo-skill", prune=False, force=True)
+    cli_module.cmd_push(args)
+
+    assert called == []
+
+
+def test_sync_status_report_reclassifies_pull_as_suspect_revert_on_regression(
+    tmp_path, monkeypatch
+):
+    """端到端整合測試（0.2.1-W3-1132 場景一重現，RED -> GREEN）：甲 push v1
+    再 push v2；乙從未同步過此 skill（無 marker），拿 v1 舊副本 push --force
+    覆蓋。甲方報告不應顯示可信的 [SHOULD PULL]，須改標 suspect_revert 並附
+    命中的歷史 commit。"""
+    bare = tmp_path / "bare.git"
+    _init_bare_with_head(bare)
+    jia = tmp_path / "jia"
+    yi = tmp_path / "yi"
+    for consumer in (jia, yi):
+        _init_consumer(consumer)
+        (consumer / ".claude" / "skills").mkdir(parents=True)
+
+    monkeypatch.setenv("SKILL_SYNC_REPO", str(bare))
+    import skill_sync.cli as cli_module
+
+    def push_in(consumer: Path, version: str, body: str, message: str) -> None:
+        skills_dir = consumer / ".claude" / "skills"
+        _write_skill_with_frontmatter_version(skills_dir, "demo-skill", version, body)
+        monkeypatch.setattr(cli_module, "get_skills_dir", lambda: skills_dir)
+        cli_module.cmd_push(
+            argparse.Namespace(name="demo-skill", message=message, force=True, prune=False)
+        )
+
+    push_in(jia, "1.0.0", "body v1", "v1")
+
+    # 乙拿 v1 副本存底，從未透過 skill-sync 同步過此 skill（不建立 marker）
+    yi_skill_dir = yi / ".claude" / "skills"
+    _write_skill_with_frontmatter_version(yi_skill_dir, "demo-skill", "1.0.0", "body v1")
+
+    push_in(jia, "1.1.0", "body v2", "v2")
+
+    # 乙用舊副本覆蓋回退（無 marker，push --force 無警告，見 0.2.1-W3-1132）
+    monkeypatch.setattr(cli_module, "get_skills_dir", lambda: yi_skill_dir)
+    cli_module.cmd_push(
+        argparse.Namespace(name="demo-skill", message="yi accidental revert", force=True, prune=False)
+    )
+
+    jia_skill_dir = jia / ".claude" / "skills"
+    status = cli_module.sync_status_report(jia_skill_dir)
+
+    assert len(status.diverged) == 1
+    entry = status.diverged[0]
+    assert entry.direction == "suspect_revert"
+    assert entry.suspect_revert_commit is not None
+
+
 # --- _stale_version_warning（純函式，0.1.0-W3-031） ---------------------------
 #
 # W3-025 判定的六支分歧全數是同一形態：內容改了、版號沒動。版號相同時它不只
@@ -1943,6 +2249,133 @@ def test_extract_version_string_none_when_no_frontmatter_block():
     text = "# demo\n\nversion: 1.0.0\n"
 
     assert _extract_version_string(text) is None
+
+
+# --- 增量禁用詞掃描（0.2.1-W3-1304） ------------------------------------------
+#
+# 詞表與豁免規則字面複製自 .claude/hooks/skill-banned-term-scan-hook.py（見
+# cli.py 該節註解說明為何不 import）；一致性由專案層級測試斷言，不在本檔內。
+# 本節測試聚焦「增量」這個 skill-sync 特有的行為：只掃新增/修改的行，既有
+# 基線債務（本次 push 未動到的既有行）不得誤報。
+
+
+def test_new_line_numbers_from_diff_marks_insert_and_replace_only():
+    before = ["a", "b", "c"]
+    after = ["a", "X", "c", "Y"]  # b -> X（replace），末尾新增 Y（insert）
+
+    assert _new_line_numbers_from_diff(before, after) == {2, 4}
+
+
+def test_scan_push_for_banned_terms_flags_new_line_in_added_file(tmp_path):
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    (source / "demo-skill").mkdir(parents=True)
+    (target / "demo-skill").mkdir(parents=True)  # target 端此檔不存在
+    (source / "demo-skill" / "NEW.md").write_text("這份文檔說明流程\n")
+
+    diff = compute_diff(source / "demo-skill", target / "demo-skill")
+    hits = scan_push_for_banned_terms(source / "demo-skill", target / "demo-skill", diff)
+
+    assert len(hits) == 1
+    assert hits[0].term == "文檔"
+    assert hits[0].suggestion == "文件"
+
+
+def test_scan_push_for_banned_terms_flags_only_new_line_in_modified_file(tmp_path):
+    """既有基線債務（本次 push 未新增/修改的既有行）不觸發報告。"""
+    source = tmp_path / "source" / "demo-skill"
+    target = tmp_path / "target" / "demo-skill"
+    source.mkdir(parents=True)
+    target.mkdir(parents=True)
+    (target / "SKILL.md").write_text("既有內容\n默認值為 1\n")  # 既有基線債務：默認
+    (source / "SKILL.md").write_text("既有內容\n默認值為 1\n新增一行含代碼字樣\n")
+
+    diff = compute_diff(source, target)
+    hits = scan_push_for_banned_terms(source, target, diff)
+
+    assert len(hits) == 1
+    assert hits[0].term == "代碼"
+    assert hits[0].line == 3
+
+
+def test_scan_push_for_banned_terms_ignores_fenced_code_block(tmp_path):
+    source = tmp_path / "source" / "demo-skill"
+    target = tmp_path / "target" / "demo-skill"
+    source.mkdir(parents=True)
+    target.mkdir(parents=True)
+    (source / "NEW.md").write_text("```\n默認\n```\n")
+
+    diff = compute_diff(source, target)
+    hits = scan_push_for_banned_terms(source, target, diff)
+
+    assert hits == []
+
+
+def test_scan_push_for_banned_terms_ignores_inline_code_span(tmp_path):
+    source = tmp_path / "source" / "demo-skill"
+    target = tmp_path / "target" / "demo-skill"
+    source.mkdir(parents=True)
+    target.mkdir(parents=True)
+    (source / "NEW.md").write_text("範例指令 `grep 默認` 僅供示範\n")
+
+    diff = compute_diff(source, target)
+    hits = scan_push_for_banned_terms(source, target, diff)
+
+    assert hits == []
+
+
+def test_scan_push_for_banned_terms_ignores_inline_marker(tmp_path):
+    source = tmp_path / "source" / "demo-skill"
+    target = tmp_path / "target" / "demo-skill"
+    source.mkdir(parents=True)
+    target.mkdir(parents=True)
+    (source / "NEW.md").write_text(
+        "地區對照：默認 <!-- banned-term-exempt: 術語對照樣本 -->\n"
+    )
+
+    diff = compute_diff(source, target)
+    hits = scan_push_for_banned_terms(source, target, diff)
+
+    assert hits == []
+
+
+def test_scan_push_for_banned_terms_skips_non_markdown_files(tmp_path):
+    source = tmp_path / "source" / "demo-skill"
+    target = tmp_path / "target" / "demo-skill"
+    source.mkdir(parents=True)
+    target.mkdir(parents=True)
+    (source / "script.py").write_text("# 這是代碼註解\n")
+
+    diff = compute_diff(source, target)
+    hits = scan_push_for_banned_terms(source, target, diff)
+
+    assert hits == []
+
+
+def test_cmd_push_reports_banned_term_without_blocking(tmp_path, monkeypatch, capsys):
+    """新增行含禁用詞：push 仍完整完成（report-only，不中止）。"""
+    import skill_sync.cli as cli_module
+
+    skills_dir = tmp_path / "skills"
+    local_skill = skills_dir / "demo-skill"
+    local_skill.mkdir(parents=True)
+    (local_skill / "NEW.md").write_text("這份文檔說明流程\n")
+    monkeypatch.setattr(cli_module, "get_skills_dir", lambda: skills_dir)
+
+    scratch = tmp_path / "scratch"
+    remote_skill = scratch / "repo" / "demo-skill"
+    remote_skill.mkdir(parents=True)  # target 端此 skill 目錄存在但無此檔
+    _stub_fixed_tempdir(monkeypatch, scratch)
+    _stub_git_recording(monkeypatch)
+
+    args = _RecordingArgs(name="demo-skill", prune=False, force=True)
+    cmd_push(args)
+
+    err = capsys.readouterr().err
+    out = capsys.readouterr().out
+    assert "[BannedTerm]" in err
+    assert "文檔" in err and "文件" in err
+    assert "Aborted" not in out and "Aborted" not in err
 
 
 # --- cmd_pull / cmd_push 方向警示整合（0.2.1-W3-671） ------------------------
