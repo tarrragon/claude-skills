@@ -51,8 +51,9 @@ import re
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 
 from gh_common import (
     FRAMEWORK_REPO,
@@ -61,6 +62,7 @@ from gh_common import (
     preflight,
     run_gh,
 )
+from owned_issues_registry import record_owned_issue
 from section_table import upsert_section
 
 # 區段 comment 首行標記：抓 "section:" 與 "owner:" 之間、"owner:" 之後至
@@ -97,6 +99,22 @@ CURRENT_CONCLUSION_SECTION_NAME = "當前結論"
 # 值，兩者皆可由 CLI 參數覆蓋，非規格權威值。
 DEFAULT_COMMENT_THRESHOLD = 30
 DEFAULT_STALE_DAYS = 7
+
+# gh api comment 物件的標準欄位，供 cmd_update 從既有 comment 回推 issue
+# number（cmd_update 只收 comment_id，不像 cmd_init 直接持有 issue_ref）。
+_ISSUE_URL_NUMBER_RE = re.compile(r"/issues/(?P<num>\d+)$")
+
+
+def _now_iso() -> str:
+    """owned-issues 登記檔的 updated_at 時間戳（UTC ISO8601）。"""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _issue_number_from_comment(comment: dict) -> Optional[int]:
+    """從 gh api comment 物件的 issue_url 回推所屬 issue number；缺失或格式
+    不符回傳 None（呼叫端略過登記檔寫入，不影響既有 GitHub 寫入結果）。"""
+    match = _ISSUE_URL_NUMBER_RE.search(comment.get("issue_url", "") or "")
+    return int(match.group("num")) if match else None
 
 
 def render_section_comment(name: str, owner: str, content: str) -> str:
@@ -275,13 +293,22 @@ def write_body(issue_ref: str, body: str) -> int:
 
 
 def search_issues_by_keyword(keyword: str) -> list:
-    """對 FRAMEWORK_REPO 以單一詞彙查標題／body／comment 內文（mock 攔截點）。"""
+    """對 FRAMEWORK_REPO 以單一詞彙查標題／body／comment 內文（mock 攔截點）。
+
+    keyword 排在全部旗標之後、以 `--` 分隔。查重 token 可能以 `-` 開頭（如
+    「commit -a」拆分出的 "-a"、或 "--force"），若排在旗標前會被 gh 的
+    cobra flag parser 誤判為短／長旗標，回 unknown flag 錯誤（實測重現：
+    未加 `--` 時 `gh search issues -a ...` 回 "unknown shorthand flag"）；
+    `--` 之後 pflag 停止解析旗標，全部視為位置參數，可安全涵蓋此形態
+    （既有測試關鍵字皆無 `-` 開頭，屬 PC-BAL-064 取樣單一格）。
+    """
     result = subprocess.run(
         [
-            "gh", "search", "issues", keyword,
+            "gh", "search", "issues",
             "--repo", FRAMEWORK_REPO,
             "--match", "title,body,comments",
             "--json", "number,title,url,state",
+            "--", keyword,
         ],
         capture_output=True,
         text=True,
@@ -299,13 +326,18 @@ def _split_keyword_tokens(keyword_group: str) -> list:
     return tokens if tokens else [keyword_group]
 
 
-def search_duplicates(keyword_groups: list) -> dict:
-    """對每組關鍵字回傳命中 issue 清單（依 issue number 去重、排序）。
+def search_duplicates(keyword_groups: list) -> tuple:
+    """對每組關鍵字回傳命中 issue 清單（依 issue number 去重、排序），與
+    略過的 token 查詢失敗總數（回傳 `(results, skipped_count)`）。
 
     單一 token 查詢失敗只警告略過，不中止其餘 token 或其他關鍵字組——查重
     本身的降級不應阻擋 init 的既有兩階段流程（查重「不阻擋」原則延伸至此）。
+    失敗數需回傳而非只印 stderr：查重涵蓋範圍縮小若無法從報告本身得知，
+    呼叫端會誤把「整體成功」讀成「查詢皆完整涵蓋」（見 render_dedup_report
+    的涵蓋缺口宣告）。
     """
     results = {}
+    skipped = 0
     for group in keyword_groups:
         hits_by_number = {}
         for token in _split_keyword_tokens(group):
@@ -313,15 +345,20 @@ def search_duplicates(keyword_groups: list) -> dict:
                 for issue in search_issues_by_keyword(token):
                     hits_by_number.setdefault(issue["number"], issue)
             except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+                skipped += 1
                 sys.stderr.write(
-                    f"[framework-issue] 查重關鍵字「{token}」查詢失敗，略過：{exc}\n"
+                    f"[framework-issue][WARNING] 查重關鍵字「{token}」查詢失敗，略過：{exc}\n"
                 )
         results[group] = [hits_by_number[n] for n in sorted(hits_by_number)]
-    return results
+    return results, skipped
 
 
-def render_dedup_report(keyword_groups: list, results: dict) -> str:
-    """組合查重報告：回顯關鍵字集合、逐組列命中清單，提醒標註關係不自動判定。"""
+def render_dedup_report(keyword_groups: list, results: dict, skipped: int = 0) -> str:
+    """組合查重報告：回顯關鍵字集合、逐組列命中清單，提醒標註關係不自動判定。
+
+    末行固定重述略過的 token 查詢失敗數（`tail -1` 即可見），使涵蓋範圍
+    縮小成為報告本身可見的明確宣告，不只依賴 stderr 的單行警告。
+    """
     lines = [
         f"[framework-issue] 查重關鍵字集合（{len(keyword_groups)} 組）：{keyword_groups}",
         "",
@@ -341,13 +378,14 @@ def render_dedup_report(keyword_groups: list, results: dict) -> str:
         "命中不等於重複：請對每張命中 issue 標註關係（重複／切分／引用），"
         "工具不自動判定，亦不阻擋後續建立。"
     )
+    lines.append(f"查詢失敗略過的 token 數：{skipped}")
     return "\n".join(lines) + "\n"
 
 
 def cmd_dedup(keywords: list) -> int:
     """唯讀查重：不建立 issue，供 init 前人工核對或獨立驗證查詢涵蓋範圍。"""
-    results = search_duplicates(keywords)
-    sys.stdout.write(render_dedup_report(keywords, results))
+    results, skipped = search_duplicates(keywords)
+    sys.stdout.write(render_dedup_report(keywords, results, skipped))
     return 0
 
 
@@ -362,8 +400,8 @@ def cmd_init(issue_ref: str, owner: str, sections_file: str, dedup_keywords: lis
             "確認 issue ref 與 sections-file 格式正確後重試",
         )
 
-    dedup_results = search_duplicates(dedup_keywords)
-    sys.stdout.write(render_dedup_report(dedup_keywords, dedup_results))
+    dedup_results, dedup_skipped = search_duplicates(dedup_keywords)
+    sys.stdout.write(render_dedup_report(dedup_keywords, dedup_results, dedup_skipped))
 
     posted = []
     try:
@@ -378,6 +416,12 @@ def cmd_init(issue_ref: str, owner: str, sections_file: str, dedup_keywords: lis
             f"{exc}",
             "檢查已建立的區段 comment，清理後修正 sections-file 重試",
         )
+
+    # 區段 comment 已全數建立成功，owner 對此 issue 的擁有關係已確立——
+    # 即使後續 body 索引回填失敗，登記檔仍應反映此事實（見
+    # owned_issues_registry 模組 docstring：best-effort 快取，寫入失敗不
+    # 影響已完成的 GitHub 寫入結果）。
+    record_owned_issue(int(issue_ref), owner, _now_iso())
 
     try:
         body = fetch_body(issue_ref)
@@ -418,6 +462,14 @@ def cmd_update(comment_id: str, content_file: str) -> int:
         patch_comment(comment_id, rendered)
     except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
         return emit_degraded(f"更新 comment {comment_id} 失敗：{exc}", "檢查權限與網路後重試")
+
+    # 更新成功後同步刷新登記檔（見 owned_issues_registry 模組 docstring）：
+    # cmd_update 只收 comment_id，issue number 須從既有 comment 的
+    # issue_url 回推；回推失敗（欄位缺失/格式不符）不影響本次更新結果，
+    # 僅略過登記檔寫入。
+    issue_number = _issue_number_from_comment(existing)
+    if issue_number is not None:
+        record_owned_issue(issue_number, marker["owner"], _now_iso())
 
     sys.stderr.write(f"[framework-issue] 區段「{marker['name']}」已更新 @ comment {comment_id}\n")
     return 0
@@ -620,6 +672,54 @@ def cmd_check(issue_ref: str, comment_threshold: int, stale_days: int) -> int:
     return 0
 
 
+# --keywords／--dedup-keywords 收值階段中，遇到這些已知旗標字串即停止收集
+# （見 _escape_dash_prefixed_keyword_values）；集合僅列本檔實際註冊的旗標。
+_KEYWORD_VALUE_STOP_FLAGS = frozenset(
+    {
+        "-h", "--help", "--owner", "--sections-file", "--content-file",
+        "--summary", "--session", "--comment-threshold", "--stale-days",
+    }
+)
+_MULTI_VALUE_KEYWORD_FLAGS = frozenset({"--keywords", "--dedup-keywords"})
+# 不可見前綴，逃脫 argparse 的「看似選項」啟發式後於 main() 內還原。
+_DASH_VALUE_ESCAPE = "\x00literal-dash\x00"
+
+
+def _escape_dash_prefixed_keyword_values(argv: list) -> list:
+    """讓 `--keywords`／`--dedup-keywords` 的值可含無空白、以 `-` 開頭的
+    token（如 "-a"、"--force"）。
+
+    argparse 對 `nargs='+'` 的貪婪收值仰賴「看起來像選項」啟發式：任一無
+    空白且以 `-` 開頭的 token 一律視為新選項起點（CPython bpo-9334），純值
+    語意的 "--force" 因而在 argparse 層即被拒為 unrecognized arguments，
+    早於 `search_issues_by_keyword` 的 gh 呼叫修正之前就先失敗，兩者是各自
+    獨立的擋點。收值階段中非已知旗標字串的 `-` 開頭 token 一律加不可見
+    前綴繞過此啟發式；收值結束（遇已知旗標）後不再加註記，`main()` 解析
+    完成後以 `_unescape_dash_prefixed_value` 逐一還原。
+    """
+    escaped = []
+    consuming = False
+    for token in argv:
+        if token in _MULTI_VALUE_KEYWORD_FLAGS:
+            consuming = True
+            escaped.append(token)
+            continue
+        if token in _KEYWORD_VALUE_STOP_FLAGS:
+            consuming = False
+        elif consuming and token.startswith("-"):
+            escaped.append(_DASH_VALUE_ESCAPE + token)
+            continue
+        escaped.append(token)
+    return escaped
+
+
+def _unescape_dash_prefixed_value(value: str) -> str:
+    """還原 `_escape_dash_prefixed_keyword_values` 加上的不可見前綴。"""
+    if value.startswith(_DASH_VALUE_ESCAPE):
+        return value[len(_DASH_VALUE_ESCAPE):]
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="framework-issue section",
@@ -678,7 +778,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
-    parsed = build_parser().parse_args(argv)
+    raw_argv = list(argv) if argv is not None else sys.argv[1:]
+    parsed = build_parser().parse_args(_escape_dash_prefixed_keyword_values(raw_argv))
 
     gate = preflight()
     if gate != 0:
@@ -686,10 +787,11 @@ def main(argv=None) -> int:
 
     if parsed.command == "init":
         return cmd_init(
-            parsed.issue_ref, parsed.owner, parsed.sections_file, parsed.dedup_keywords
+            parsed.issue_ref, parsed.owner, parsed.sections_file,
+            [_unescape_dash_prefixed_value(k) for k in parsed.dedup_keywords],
         )
     if parsed.command == "dedup":
-        return cmd_dedup(parsed.keywords)
+        return cmd_dedup([_unescape_dash_prefixed_value(k) for k in parsed.keywords])
     if parsed.command == "update":
         return cmd_update(parsed.comment_id, parsed.content_file)
     if parsed.command == "observe":

@@ -32,6 +32,18 @@ def _bypass_preflight(monkeypatch):
     monkeypatch.setattr(gh_common, "check_gh_authenticated", lambda: True)
 
 
+@pytest.fixture(autouse=True)
+def _stub_owned_issues_registry(monkeypatch):
+    """owned-issues 登記檔寫入為 init／update 成功路徑新增的旁路 side
+    effect，非本檔案既有測試的驗證焦點；預設 stub 為 no-op，避免其內部
+    `git rev-parse` 呼叫被既有 `_run` side_effect 函式判為「未預期的 gh
+    呼叫」而炸開（`mock.patch.object(section_comment.subprocess, "run",
+    ...)` patch 的是共用 subprocess 模組，owned_issues_registry 的呼叫
+    亦會被攔截）。「owned-issues 登記檔寫入」節的專屬測試另行覆蓋以驗證
+    呼叫參數。"""
+    monkeypatch.setattr(section_comment, "record_owned_issue", lambda *a, **k: None)
+
+
 # --- 純函式：標記渲染與抽取 ---
 
 
@@ -254,6 +266,37 @@ def test_init_requires_dedup_keywords_flag(tmp_path):
     assert exc_info.value.code == 2
 
 
+# --- owned-issues 登記檔寫入：init／update 成功後同步落地一筆登記 ---
+
+
+def test_init_records_owned_issue_after_successful_section_creation(tmp_path):
+    """區段 comment 全數建立成功後，須以 (issue number, owner, timestamp)
+    呼叫 record_owned_issue——即使後續 body 索引回填步驟才執行。"""
+    sections_file = tmp_path / "sections.json"
+    sections_file.write_text(
+        json.dumps([{"name": "當前結論", "content": "內容"}]), encoding="utf-8"
+    )
+    post_urls = [("https://github.com/tarrragon/claude/issues/81#issuecomment-1", 1)]
+    captured = {}
+
+    with mock.patch.object(
+        section_comment.subprocess, "run", side_effect=_init_side_effect(post_urls, captured)
+    ), mock.patch.object(section_comment, "record_owned_issue") as record:
+        rc = section_comment.main(
+            [
+                "init", "81", "--owner", "test-session", "--sections-file", str(sections_file),
+                "--dedup-keywords", "測試關鍵字",
+            ]
+        )
+    assert rc == 0
+    record.assert_called_once()
+    number, owner, updated_at = record.call_args.args
+    assert number == 81
+    assert isinstance(number, int)
+    assert owner == "test-session"
+    assert isinstance(updated_at, str) and updated_at
+
+
 # --- dedup：查重（token 聯集查詢，避免跨 comment AND 語意漏判） ---
 
 
@@ -276,9 +319,25 @@ def test_search_issues_by_keyword_builds_expected_gh_command():
         hits = section_comment.search_issues_by_keyword("元件契約")
     assert hits == [{"number": 81, "title": "t", "url": "u", "state": "open"}]
     args = run.call_args.args[0]
-    assert args[:4] == ["gh", "search", "issues", "元件契約"]
+    assert args[:3] == ["gh", "search", "issues"]
     assert "--repo" in args and args[args.index("--repo") + 1] == "tarrragon/claude"
     assert "--match" in args and args[args.index("--match") + 1] == "title,body,comments"
+    # keyword 排在 "--" 之後，避免以 "-" 開頭的 token 被誤判為旗標。
+    assert args[-2:] == ["--", "元件契約"]
+
+
+def test_search_issues_by_keyword_places_hyphen_prefixed_token_after_double_dash():
+    """關鍵字「commit -a」拆分出的 "-a" 若排在旗標前，會被 gh 的 cobra flag
+    parser 誤判為短旗標；驗證 "--" 分隔確實把它排到位置參數區。"""
+    with mock.patch.object(
+        section_comment.subprocess,
+        "run",
+        return_value=_completed(stdout=json.dumps([])),
+    ) as run:
+        section_comment.search_issues_by_keyword("-a")
+    args = run.call_args.args[0]
+    assert args[-2:] == ["--", "-a"]
+    assert "-a" not in args[:-1]
 
 
 def test_search_issues_by_keyword_raises_on_gh_failure():
@@ -297,7 +356,7 @@ def test_search_duplicates_unions_tokens_to_cover_cross_comment_terms():
     共現）；拆為單詞查詢後聯集才涵蓋。"""
 
     def _run(args, **kwargs):
-        token = args[3]
+        token = args[-1]
         if token == "skill":
             return _completed(stdout=json.dumps([{"number": 79, "title": "a", "url": "u1", "state": "open"}]))
         if token == "拆分":
@@ -312,23 +371,46 @@ def test_search_duplicates_unions_tokens_to_cover_cross_comment_terms():
         raise AssertionError(f"未預期的 token：{token}")
 
     with mock.patch.object(section_comment.subprocess, "run", side_effect=_run):
-        results = section_comment.search_duplicates(["skill 拆分"])
+        results, skipped = section_comment.search_duplicates(["skill 拆分"])
     numbers = sorted(issue["number"] for issue in results["skill 拆分"])
     assert numbers == [79, 82]
+    assert skipped == 0
 
 
 def test_search_duplicates_skips_failed_token_without_aborting_others(capsys):
     def _run(args, **kwargs):
-        token = args[3]
+        token = args[-1]
         if token == "壞詞":
             return _completed(returncode=1, stderr="network error")
         return _completed(stdout=json.dumps([{"number": 1, "title": "t", "url": "u", "state": "open"}]))
 
     with mock.patch.object(section_comment.subprocess, "run", side_effect=_run):
-        results = section_comment.search_duplicates(["壞詞", "好詞"])
+        results, skipped = section_comment.search_duplicates(["壞詞", "好詞"])
     assert results["壞詞"] == []
     assert results["好詞"] == [{"number": 1, "title": "t", "url": "u", "state": "open"}]
-    assert "壞詞" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "壞詞" in err
+    assert "[WARNING]" in err
+    assert skipped == 1
+
+
+def test_search_duplicates_counts_skipped_hyphen_prefixed_token_and_still_unions_rest(capsys):
+    """關鍵字組「commit -a」含以 "-" 開頭的 token；驗證該 token 不再因旗標
+    誤判而查詢失敗（實際送出 query），且失敗計數與涵蓋範圍缺口正確反映。"""
+
+    def _run(args, **kwargs):
+        token = args[-1]
+        if token == "--force":
+            return _completed(returncode=1, stderr="network error")
+        if token in ("commit", "-a"):
+            return _completed(stdout=json.dumps([{"number": 5, "title": "t", "url": "u", "state": "open"}]))
+        raise AssertionError(f"未預期的 token：{token}")
+
+    with mock.patch.object(section_comment.subprocess, "run", side_effect=_run):
+        results, skipped = section_comment.search_duplicates(["commit -a", "--force"])
+    assert [issue["number"] for issue in results["commit -a"]] == [5]
+    assert results["--force"] == []
+    assert skipped == 1
 
 
 def test_render_dedup_report_lists_no_hit_group_and_footer():
@@ -337,6 +419,14 @@ def test_render_dedup_report_lists_no_hit_group_and_footer():
     assert "無命中詞" in report
     assert "無命中" in report
     assert "命中不等於重複" in report
+    # 未傳 skipped 時預設 0，末行仍固定重述（tail -1 可見的涵蓋缺口宣告）。
+    assert report.rstrip("\n").splitlines()[-1] == "查詢失敗略過的 token 數：0"
+
+
+def test_render_dedup_report_last_line_restates_skipped_count():
+    """略過的關鍵字查詢失敗數須在報告最後一行重述，`tail -1` 即可見。"""
+    report = section_comment.render_dedup_report(["--force"], {"--force": []}, skipped=1)
+    assert report.rstrip("\n").splitlines()[-1] == "查詢失敗略過的 token 數：1"
 
 
 def test_cmd_dedup_is_read_only_and_does_not_call_gh_issue_or_api():
@@ -348,6 +438,26 @@ def test_cmd_dedup_is_read_only_and_does_not_call_gh_issue_or_api():
     assert rc == 0
     for call in run.call_args_list:
         assert call.args[0][:2] == ["gh", "search"]
+
+
+def test_cmd_dedup_cli_accepts_hyphen_prefixed_keyword_group_end_to_end(capsys):
+    """端對端重現 acceptance 命令：`dedup --keywords "commit -a" "--force"`。
+
+    "--force" 本身即一整個 keyword group（非拆自「commit -a」的子 token），
+    需先通過 argparse 收值（`_escape_dash_prefixed_keyword_values`）才會被
+    傳入 `search_duplicates`；兩個 token 皆須實際送出 gh 查詢。"""
+    queried_tokens = []
+
+    def _run(args, **kwargs):
+        queried_tokens.append(args[-1])
+        return _completed(stdout=json.dumps([]))
+
+    with mock.patch.object(section_comment.subprocess, "run", side_effect=_run):
+        rc = section_comment.main(["dedup", "--keywords", "commit -a", "--force"])
+    assert rc == 0
+    assert set(queried_tokens) == {"commit", "-a", "--force"}
+    out = capsys.readouterr().out
+    assert out.rstrip("\n").splitlines()[-1] == "查詢失敗略過的 token 數：0"
 
 
 # --- update：以 comment id 精準 PATCH，保留首行標記，不動其他 comment ---
@@ -402,6 +512,62 @@ def test_update_rejects_comment_without_section_marker(tmp_path, capsys):
     assert "非區段標記" in capsys.readouterr().err
     # 確認未發出 PATCH（僅 GET 一次即被拒）。
     assert run.call_count == 1
+
+
+def test_update_records_owned_issue_with_number_from_issue_url(tmp_path):
+    """cmd_update 只收 comment_id，issue number 須從既有 comment 的
+    issue_url 回推；成功時以 (issue number, owner, timestamp) 呼叫
+    record_owned_issue。"""
+    content_file = tmp_path / "content.md"
+    content_file.write_text("## 當前結論\n更新後內容", encoding="utf-8")
+
+    def _run(args, **kwargs):
+        if args[:2] == ["gh", "api"] and "--method" not in args:
+            return _completed(
+                stdout=json.dumps(
+                    {
+                        "body": "<!-- section: 當前結論 owner: flutter-balance-99 -->\n舊內容",
+                        "issue_url": "https://api.github.com/repos/tarrragon/claude/issues/81",
+                    }
+                )
+            )
+        if "--method" in args and args[args.index("--method") + 1] == "PATCH":
+            return _completed(stdout=json.dumps({"id": 5523472948}))
+        raise AssertionError(f"未預期的 gh 呼叫：{args}")
+
+    with mock.patch.object(section_comment.subprocess, "run", side_effect=_run), \
+            mock.patch.object(section_comment, "record_owned_issue") as record:
+        rc = section_comment.main(["update", "5523472948", "--content-file", str(content_file)])
+    assert rc == 0
+    record.assert_called_once()
+    number, owner, updated_at = record.call_args.args
+    assert number == 81
+    assert owner == "flutter-balance-99"
+    assert isinstance(updated_at, str) and updated_at
+
+
+def test_update_skips_registry_write_when_issue_url_missing(tmp_path):
+    """既有 comment 缺 issue_url（非標準/測試替身資料）時，回推失敗只略過
+    登記檔寫入，不影響 update 本身成功。"""
+    content_file = tmp_path / "content.md"
+    content_file.write_text("## 當前結論\n更新後內容", encoding="utf-8")
+
+    def _run(args, **kwargs):
+        if args[:2] == ["gh", "api"] and "--method" not in args:
+            return _completed(
+                stdout=json.dumps(
+                    {"body": "<!-- section: 當前結論 owner: flutter-balance-99 -->\n舊內容"}
+                )
+            )
+        if "--method" in args and args[args.index("--method") + 1] == "PATCH":
+            return _completed(stdout=json.dumps({"id": 5523472948}))
+        raise AssertionError(f"未預期的 gh 呼叫：{args}")
+
+    with mock.patch.object(section_comment.subprocess, "run", side_effect=_run), \
+            mock.patch.object(section_comment, "record_owned_issue") as record:
+        rc = section_comment.main(["update", "5523472948", "--content-file", str(content_file)])
+    assert rc == 0
+    record.assert_not_called()
 
 
 # --- observe：任何 session 可用，不需 owner，不改 body ---
