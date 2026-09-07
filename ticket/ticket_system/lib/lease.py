@@ -186,6 +186,27 @@ LEASE_STATE_LIVE = "live"
 LEASE_STATE_RECLAIMABLE = "reclaimable"
 LEASE_STATE_UNTRACKED = "untracked"
 
+# 文字標記後綴（`dashboard`／`list` 兩處 In Progress 渲染共用單一來源。
+# list 原僅渲染狀態不含 lease 標記，使依賴其輸出帶 [RECLAIMABLE] 的假設
+# 落空；改由本函式統一供應，避免各呼叫端各自維護一份對照表分裂）。
+LEASE_TAG_LIVE = "LIVE"
+LEASE_TAG_RECLAIMABLE = "RECLAIMABLE"
+
+_LEASE_TEXT_TAGS = {
+    LEASE_STATE_LIVE: f" [{LEASE_TAG_LIVE}]",
+    LEASE_STATE_RECLAIMABLE: f" [{LEASE_TAG_RECLAIMABLE}]",
+}
+
+
+def format_lease_tag(state: Optional[str]) -> str:
+    """將 `determine_lease_state` 回傳的三態轉為顯示用文字標記後綴。
+
+    LIVE/RECLAIMABLE 回傳對應標記（如 `" [LIVE]"`，含前導空格便於直接
+    附加於既有行尾）；UNTRACKED 或未知值回傳空字串（Never break
+    userspace：既有無 lease 資訊的呼叫端輸出格式不受影響）。
+    """
+    return _LEASE_TEXT_TAGS.get(state, "")
+
 
 def determine_lease_state(
     registry: Dict[str, Any],

@@ -685,7 +685,9 @@ def _register_lifecycle_commands(
             dest="as_agent",
             default=None,
             metavar="AGENT_NAME",
-            help="申報執行身份，與 who.current 對照不符即 deny（W1-048；未提供僅警告）",
+            help="申報執行身份，與 who.current 對照不符即 deny；未提供亦 deny"
+            "（W1-048；complete/finish 屬 identity_guard.ENFORCED_COMMANDS，"
+            "已轉強制申報，非 warn-only）",
         )
 
     p_complete = subparsers.add_parser("complete", help=TrackMessages.HELP_COMPLETE)
@@ -1098,10 +1100,23 @@ def _register_relation_commands(
     # set-blocked-by 操作
     p_set_blocked_by = subparsers.add_parser(
         "set-blocked-by",
-        help="設定 Ticket 的 blockedBy 欄位（阻塞依賴）"
+        help="設定 Ticket 的 blockedBy 欄位（阻塞依賴）",
+        epilog=(
+            "範例:\n"
+            "  ticket track set-blocked-by <id> <blocked-by-id>\n"
+            "  ticket track set-blocked-by <id> \"<id-a> <id-b>\" --add\n"
+            "\n"
+            "value 是單一位置參數：多個 ID 須引號包成一個字串，字串內以空格"
+            "分隔；不加引號會被 shell 拆成多個參數，argparse 報 unrecognized"
+            " arguments。"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_set_blocked_by.add_argument("ticket_id", help="目標 Ticket ID")
-    p_set_blocked_by.add_argument("value", help="被引用的 Ticket ID（空格分隔）")
+    p_set_blocked_by.add_argument(
+        "value",
+        help="被引用的 Ticket ID；多個時須以引號包成單一字串，字串內以空格分隔（例：\"A B\"）",
+    )
     p_set_blocked_by.add_argument("--add", action="store_true", help="追加模式（去重）")
     p_set_blocked_by.add_argument("--remove", action="store_true", help="移除模式")
     p_set_blocked_by.add_argument("--version", help=TrackMessages.ARG_VERSION)
@@ -1109,10 +1124,23 @@ def _register_relation_commands(
     # set-related-to 操作
     p_set_related_to = subparsers.add_parser(
         "set-related-to",
-        help="設定 Ticket 的 relatedTo 欄位（相關任務）"
+        help="設定 Ticket 的 relatedTo 欄位（相關任務）",
+        epilog=(
+            "範例:\n"
+            "  ticket track set-related-to <id> <related-id>\n"
+            "  ticket track set-related-to <id> \"<id-a> <id-b>\" --add\n"
+            "\n"
+            "value 是單一位置參數：多個 ID 須引號包成一個字串，字串內以空格"
+            "分隔；不加引號會被 shell 拆成多個參數，argparse 報 unrecognized"
+            " arguments。"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_set_related_to.add_argument("ticket_id", help="目標 Ticket ID")
-    p_set_related_to.add_argument("value", help="相關的 Ticket ID（空格分隔）")
+    p_set_related_to.add_argument(
+        "value",
+        help="相關的 Ticket ID；多個時須以引號包成單一字串，字串內以空格分隔（例：\"A B\"）",
+    )
     p_set_related_to.add_argument("--add", action="store_true", help="追加模式（去重）")
     p_set_related_to.add_argument("--remove", action="store_true", help="移除模式")
     p_set_related_to.add_argument("--version", help=TrackMessages.ARG_VERSION)

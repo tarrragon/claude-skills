@@ -28,6 +28,8 @@ v             v
                         [進入執行流程]
 ```
 
+> decision-tree 三參數：`--decision-tree-entry` / `--decision-tree-decision` / `--decision-tree-rationale`，完整用法與必填條件見 `create-command.md`〈用法〉。
+
 > 版本目錄不參與此決策：`ticket --help` 無 `init` 子命令，`create` 執行時以 `get_tickets_dir(version)` 自動建立版本目錄，無需前置初始化步驟。
 
 **本樹涵蓋的命令**：

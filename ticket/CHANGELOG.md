@@ -2,12 +2,15 @@
 
 新到舊。版號規則與兩個住址（本檔與 `SKILL.md` frontmatter 的 `metadata.version`）見專案的 skill 同步規範。frontmatter 版號同步由後續收尾票統一處理，本檔先行遞增記錄。
 
-**Version**: 2.29.0
+**Version**: 2.30.0
 **Last Updated**: 2026-09-08
 **Status**: Completed
 
 **Change Log**:
 
+- v2.30.0 (2026-09-08): 拆分後續兩批修法（冷讀審查與 CLI 缺陷群）；SKILL.md 全檔 4,992 tokens、167 行，路由表雙向零命中
+  - **CLI**：`set-blocked-by`／`set-related-to` 多值位置參數 help 明示引號包裹並附 epilog 範例；`track dashboard` 的 `[Handoff Target]` 改走 `resolve_target` 與 `resume --list` 一致，`is_handoff_stale` 補 closed 判定（`--gc`／`--from-worklog`／`resume --list` 共用），`create` 新增 `--dry-run`；`track list` 對 in_progress 列渲染與 dashboard 同源的 lease 標記（`lease.format_lease_tag`），`complete`／`finish` 的 `--as` help 改為強制 deny 語意；`AuditReport` 新增 `artifact_who`／`artifact_updated` 並於 `track audit` 輸出「執行者｜最後更新」行；dashboard auto-GC 歸檔寫持久日誌（`hook-logs/handoff-gc/`），Stop hook 的 stale handoff 由刪除改為歸檔並處理同名碰撞
+  - **文件**：入口檔補五詞術語路由、路由表 field-semantics 用途欄與 root 分離節條件語意修正、裸 `complete` 範例補 `--as`；`architecture.md`〈術語〉鑑識三查第 3 查改為 soft warning（對齊 `lease.py`）並補三詞；三檔 `complete` 對 pending／blocked 的 exit code 統一為 2（對齊 `lifecycle.py`）；`track-command.md` 新增〈子命令總覽（全量對照 --help）〉涵蓋 89 個子命令，1-E 斷言支撐 F4–F17 補來源，`--as` 支援清單訂正為六命令；`resume-command.md` 兩處 `ticket track handoff` 改頂層 `ticket handoff`；`migrate`／`handoff`／`create`／`workflow-create` 指涉閉合與計數縮略修正；`create-command.md` 量測值補方法與環境
 - **拆分總結**（依 skill-design-guide 重整，issue tarrragon/claude#94；來源：拆分系列，跨 v2.22.0–v2.29.0；before 取自重構前快照 `8f634fa43`，after 為本輪收尾實測）：入口檔 `SKILL.md` 全檔（含 frontmatter）14,347 → 4,971 tokens、body 14,133 → 4,875 tokens（框架分段估算公式：非 ASCII 1.3 字元/token、ASCII 4 字元/token；Progressive Disclosure 第 2 層門檻對象為全檔，< 5,000）、593 → 167 行、frontmatter `description` 596 → 224 字元、`##` 節數 12 → 5、`references/` 檔數 15 → 14；子命令路由表〈涵蓋章節〉欄與各 `references/*.md` 的 `##` 標題逐字雙向比對零命中（fenced block 排除）。逐版異動見下列各條目。
 - v2.29.0 (2026-09-08): 同步 Round 3 CLI 缺陷修復群六項行為變更至文件（skill-cli-sync-check）
   - **track commit 目錄展開排除他票宣告檔案**（3-B B1）：〈track commit 子命令〉「files 子集規則」補「目錄展開的並行過濾」段，說明展開時讀取 `.claude/dispatch-active.json` 排除其他活躍派發宣告路徑的變更檔（並行防護加強層，非安全邊界本身；registry 讀取失敗 fail-open）

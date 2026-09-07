@@ -63,7 +63,7 @@
 |--------|---------|
 | `track-command.md`〈track commit 子命令〉files 子集規則 | 提交檔案須落在寫入子集內；目錄型宣告於提交時展開為實際變更檔案 |
 | `track-command.md`〈track dispatch 子命令〉設計約束 | 目錄型寫入宣告未帶 `::read` 時硬擋，拒絕輸出骨架 |
-| `track-command.md`〈track runqueue〉`--groups` 安全性條件 2 | ANA 預設 `read` 不建衝突邊（約 19.3% 假陰性，已知取捨，非本次修復範圍） |
+| `track-command.md`〈track runqueue〉`--groups` 安全性條件 2 | ANA 預設 `read` 不建衝突邊（約 19.3%／57 個 ANA 宣告樣本中 11 個為假陰性，已知取捨，非本次修復範圍） |
 | `track-command.md`〈track conflicts 子命令〉判定規則第 4 項 | 與 pm-registry 交叉比對時僅採 `write` 集合 |
 | `track-command.md`〈track onboard 子命令〉髒檔歸屬設計 | 髒檔命中依最長匹配前綴特異度歸屬；泛目錄宣告（路徑段數 <= 2）無鑑別力 |
 | `track-command.md`〈track dispatch-readiness 子命令〉閾值 2／檢查 5／6 | 修改檔案數計數、路徑存在性、acceptance 路徑涵蓋性三項啟發式皆讀 `where.files` |
@@ -196,7 +196,7 @@
 | 拆分功能成 atomic sub-tasks（必同時交付完整功能） | `parent_id` / `children` | `--parent <PARENT-ID>` | 「上游必須等子任務完成才能 complete？」是 → children |
 | **ANA 結論的執行延伸（IMP/DOC 落地）** | **`parent_id` / `children`** | **`--parent <ANA-ID>`** | 「ANA 結論要求落地？」是 → children（PC-091 路線） |
 | 執行過程中發現獨立 bug / 技術債（與當前 ticket 無因果） | `source_ticket` / `spawned_tickets` | `--source-ticket <SOURCE-ID>` | 「上游 ticket 結論要求？」否，但發現於執行中 → spawned |
-| 兄弟單向時序依賴（規格→實作） | `blockedBy` | `set-blocked-by` 或建立時 `--blocked-by` | 「需要血緣？」否；「需要時序等待？」是 → blockedBy（須滿足串行 4 條件） |
+| 兄弟單向時序依賴（規格→實作） | `blockedBy` | `set-blocked-by` 或建立時 `--blocked-by` | 「需要血緣？」否；「需要時序等待？」是 → blockedBy（須滿足串行 4 條件，定義見 `atomic-ticket-methodology.md`〈串行兄弟合法 4 條件〉，否則回歸 ARCH-017 重組） |
 | 同 wave 內彼此引用、無時序依賴 | `relatedTo` | `set-related-to` 或建立時 `--related-to` | 「需要等待？」否；「想記錄關聯？」是 → relatedTo |
 | 完全獨立的新需求 | （無欄位）sibling | （三皆否，不指定上述任一） | 「上游觸發？時序依賴？關聯？」三皆否 → sibling |
 

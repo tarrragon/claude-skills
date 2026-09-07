@@ -82,14 +82,14 @@ SessionStart hook → 顯示「Handoff 提醒」（僅提醒）
 
 ### `exit_status` 欄位：票面 Exit Status 章節到 handoff JSON 的橋
 
-`exit_status` 非獨立輸入欄位，而是 `ticket track handoff` 建立 JSON 當下，從**來源 ticket** body 的 `## Exit Status` H2 section 抽取而來（`handoff.py:_extract_exit_status_for_handoff`）：剝除樣板 HTML 註解、解析其中的 YAML 區塊（fenced ```yaml 優先，否則整段視為 YAML），取 `exit_status` 或 `status` 子欄位，寫入 handoff JSON 的 `exit_status` 物件。
+`exit_status` 非獨立輸入欄位，而是 `ticket handoff` 建立 JSON 當下，從**來源 ticket** body 的 `## Exit Status` H2 section 抽取而來（`handoff.py:_extract_exit_status_for_handoff`）：剝除樣板 HTML 註解、解析其中的 YAML 區塊（fenced ```yaml 優先，否則整段視為 YAML），取 `exit_status` 或 `status` 子欄位，寫入 handoff JSON 的 `exit_status` 物件。
 
 三個消費端各自的角色（誰寫、誰讀、何時）：
 
 | 角色 | 命令 | 動作 |
 |------|------|------|
 | 寫入端 | `ticket track set-exit-status` | 把 YAML 寫入來源 ticket body 的 `## Exit Status` 章節（見 `track-command.md`〈track set-exit-status 子命令〉） |
-| 橋接端 | `ticket track handoff` | 建立 JSON 當下讀該章節，抽取 `status` 寫入 JSON 的 `exit_status` 欄位；fail-open——缺段／YAML 解析失敗／`status` 非合法枚舉一律回 `None`，JSON 省略該欄位，不阻擋 handoff 主流程 |
+| 橋接端 | `ticket handoff` | 建立 JSON 當下讀該章節，抽取 `status` 寫入 JSON 的 `exit_status` 欄位；fail-open——缺段／YAML 解析失敗／`status` 非合法枚舉一律回 `None`，JSON 省略該欄位，不阻擋 handoff 主流程 |
 | 讀取端（JSON） | `ticket track runqueue --context=resume` | 讀 JSON 的 `exit_status.status`，以 `[<status>]` tag 取代 `blockedBy=[]` runnable 標記（見 `track-command.md`〈track runqueue 子命令〉「Exit Status tag」） |
 | 讀取端（票面，不經橋接） | `ticket track reclaim` 第 3 查 | 直接讀來源 ticket body 的 `## Exit Status` 章節（不經 handoff JSON），缺失/佔位符為 soft warning，不計入拒絕判定（見 `track-command.md`〈track reclaim 子命令〉） |
 

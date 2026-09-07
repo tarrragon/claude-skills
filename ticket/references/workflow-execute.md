@@ -45,7 +45,7 @@ v                  v
 **本樹涵蓋的命令**：
 
 - `/ticket track claim <id>` - 認領 Ticket
-- `/ticket track complete <id>` - 完成 Ticket
+- `/ticket track complete <id> --as <agent>` - 完成 Ticket（`--as` 未提供即 deny，exit 1，見 track-command.md）
 - `/ticket track release <id>` - 釋放 Ticket
 
 ## 更新操作決策樹
@@ -120,8 +120,8 @@ exit 1      │                     │
                            │                       │
                            v                       v
                       [Error]               ┌─ 驗收條件全完成? ─┐
-                      阻止                  │                   │
-                      exit 1                否                  是
+                      阻止（pending/blocked） │                   │
+                      exit 2                否                  是
                                             │                   │
                                             v                   v
                                        [Error]            [完成判斷]
@@ -143,7 +143,10 @@ v             v
 否                是
 │                 │
 v                 v
-[交接流程]        [任務完成]
+[Error]           [任務完成]
+阻擋，先完成       │
+children          │
+（--force 可旁路，exit 1）
 ```
 
 ## 完成後同步提醒

@@ -72,6 +72,10 @@ handoff JSON 同時保留兩個指向欄位：
 /ticket handoff --from-worklog                    # 解析當前 active version worklog
 /ticket handoff --from-worklog --worklog-path P   # 指定 worklog 路徑
 /ticket handoff --from-worklog --dry-run          # 預演模式（只顯示將執行命令，不寫檔）
+
+# 清理已完成票的 stale pending handoff JSON（Session 結束前置檢查，見下方步驟 0）
+/ticket handoff --gc --dry-run                    # 只列出將清理的檔案，不刪除
+/ticket handoff --gc --execute                    # 實際刪除
 ```
 
 ### --from-worklog 子命令
@@ -113,7 +117,7 @@ handoff JSON 同時保留兩個指向欄位：
 | auto_generated | False | True |
 | direction | `context-refresh`（固定） | 可為 to-parent / to-child / to-sibling / context-refresh（`_VALID_AUTO_DIRECTIONS`，四值） |
 
-> 上表 `--auto` 值域不含歷史值：該值僅供讀取端辨識，`--auto` 傳入會被 CLI 拒絕，詳見下方「Wave-level 交接」段。
+> 上表 `--auto` 值域不含歷史值 `next-wave`：該值僅供讀取端（`resume.py`）辨識，`--auto --direction next-wave` 會被 CLI 拒絕（`_VALID_AUTO_DIRECTIONS` 不含此值），詳見下方「Wave-level 交接」段。
 
 ## 自動偵測行為
 
@@ -153,7 +157,7 @@ commit-handoff-hook 偵測到 `git commit` 成功後，PM 會用 AskUserQuestion
 |------|-----------|------|
 | Wave 完成，進入下一 Wave | `next-wave` | 不綁定特定 ticket |
 
-`next-wave` handoff 的 JSON 若含 `from_version`、`to_version`、`session_summary` 等 wave-level 欄位，`resume.py` 會讀取並顯示（來源 Wave／目標 Wave／Session 摘要）。**產生端不在本 skill 內**：`ticket_system` 與 `skills/ticket/hooks/` 對這三個欄位名零命中，本 skill 沒有任何程式碼會寫入它們；若由外部腳本或人工建立 `next-wave` handoff JSON，欄位名須自行對齊 `resume.py` 的讀取邏輯，`ticket_id` 則為描述性名稱（如 `v{version}-W{wave}-planning`）。
+`next-wave` handoff 的 JSON 若含 `from_version`、`to_version`、`session_summary` 等 wave-level 欄位，`resume.py` 會讀取並顯示（來源 Wave／目標 Wave／Session 摘要）。**產生端不在本 skill 內**：`ticket_system` 與 `skills/ticket/hooks/` 對這三個欄位名零命中，本 skill 沒有任何程式碼會寫入它們；若由外部腳本或人工建立 `next-wave` handoff JSON，欄位名須自行對齊 `resume.py` 的讀取邏輯，`ticket_id` 則為描述性名稱（如 `v{version}-W{wave}-planning`）。**`--auto --direction next-wave` 會被 CLI 拒絕**（`handoff.py:_VALID_AUTO_DIRECTIONS` 不含 `next-wave`）：本 skill 目前無 CLI 路徑產生 `next-wave` handoff，只能靠外部腳本或人工建立 JSON。
 
 **禁止行為**：
 

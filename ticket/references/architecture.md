@@ -12,7 +12,7 @@
 
 > **設計文件例外**：本節為架構設計論證（issue tracker 類比、歷史事故回顧），不含執行者動作；依體例判準（手冊 vs 教材）列為刻意保留的教材節，不要求補充可執行動作。
 
-本系統的參照模型是 **issue tracker + CI runner**（batch job queue 為輔助類比），不是 OS process。三個與 OS process 直覺相反的預設（設計回顧確認：誤用 process 直覺是共享樹競態與身份回填缺口兩類歷史事故的共同根因）：
+本系統的參照模型是 **issue tracker + CI runner**（batch job queue 為輔助類比），不是 OS process。三個與 OS process 直覺相反的預設（誤用 process 直覺的具體代價：共享工作區檔案競態實例見 `PC-BAL-008`；身份晚綁定的縫隙場景見下方第 1 點與 `track-command.md`〈claim 推薦用法（subagent 派發時的身份申報）〉「為何需要 `--as`」段）：
 
 1. **身份晚綁定**：ticket 建立時不知道執行者（submit 與 assign 分離）；身份在 claim 時以 `--as` 綁定，不是 fork 即繼承。
 2. **共享工作區**：agent 預設共享 working tree（thread 語意）而非 process 隔離；檔案變更型派發應優先採 feat branch / worktree 隔離。
@@ -55,10 +55,13 @@ multi-PM 協調層與票務自造詞的一次性定義；SKILL.md／track-comman
 | 票面 | ticket md 檔案的內容本身（frontmatter 欄位、各章節文字）。 |
 | 落票 | 把資訊寫入票面的動作，如 `append-log`、`dispatch --note`。 |
 | 派發骨架 | `ticket track dispatch` 輸出的代理人 prompt 模板，供 PM 貼入 Agent 呼叫；欄位定義見 `agent-dispatch-template`。 |
-| 鑑識三查 | `track reclaim` 對疑似已死 session 持票的三項檢查（未合併分支／髒檔交集／缺 Exit Status），任一命中或無法判定即拒絕釋放。 |
+| 鑑識三查 | `track reclaim` 對疑似已死 session 持票的三項檢查：未合併分支、髒檔交集（兩查任一命中或無法判定即拒絕釋放）與缺 Exit Status（僅 soft warning，不計入拒絕——遺留票的定義正是執行者已不在，此欄必然無人能填，見 `lease.py::GhostReport`）。 |
 | 接手 | PM 或代理人取得一張票的工作權：pending 票首次認領為 claim；in_progress 票恢復處理為 resume（見 `SKILL.md`〈無子命令時的預設行為〉）。 |
 | 隔離索引 | `GIT_INDEX_FILE` 指向獨立臨時 git index 的提交配方，避免共用 index 的 TOCTOU 競爭；完整配方見 `.claude/references/bash-tool-usage-details.md`「規則七詳細」。 |
 | 世界平面 | filesystem／git／ticket 等外部可查證狀態的統稱，與「記錄平面」（transcript／對話記憶）相對；重大狀態轉換須以世界平面為準，見 `.claude/rules/core/tool-output-trust-rules.md` 規則 5。 |
+| 制式句 | 供 agent 複製貼上執行的固定格式指令片段（如精準 staging + 裸 commit 三步驟），與由 CLI 內部呼叫、agent 免記憶的自動化路徑相對；`track dispatch` 骨架嵌入其權威版全文供派發時引用，見 `track-command.md`〈track commit 子命令〉。 |
+| ghost | 系統靜態記錄（registry／ticket 狀態）顯示存在或進行中，但實際已不成立的殘留現象；涵蓋疑似已死 session 持有的票（見鑑識三查）與同 turn 重複 spawn 產生的重複執行流，見 `create-command.md`〈--allow-duplicate 旁路〉。 |
+| 零機制慣例 | 純敘事欄位（如 When）內容不觸發任何工具推斷或自動化行為的設計慣例；提及 ticket ID 僅供人讀，不構成依賴宣告，見 `field-semantics.md`〈When 散文與 blockedBy 的邊界〉。 |
 
 ## 目錄結構
 
@@ -270,7 +273,7 @@ Step 1: 載入 Ticket
     ↓ 找不到 → [Error] exit 1
 Step 2: 驗證狀態（validate_completable_status）
     ↓ completed → [Info] 友好訊息，exit 0
-    ↓ pending/blocked → [Error] 阻止，exit 1
+    ↓ pending/blocked → [Error] 阻止，exit 2（precondition.require_in_progress() 判定）
 Step 3: 驗證驗收條件（validate_acceptance_criteria）
     ↓ 有未完成項 → [Error] 列出未完成項，exit 1
 Step 4: 執行完成操作
