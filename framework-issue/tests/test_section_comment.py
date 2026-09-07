@@ -89,6 +89,35 @@ def test_render_index_includes_permalink_table():
     assert "| 方案評估 | https://github.com/tarrragon/claude/issues/81#issuecomment-2 |" in rendered
 
 
+def test_render_index_table_renders_name_url_rows():
+    rows = [
+        {"name": "當前結論", "url": "https://github.com/tarrragon/claude/issues/81#issuecomment-1"},
+        {"name": "方案評估", "url": "https://github.com/tarrragon/claude/issues/81#issuecomment-2"},
+    ]
+    rendered = section_comment.render_index_table(rows)
+    assert rendered.startswith(section_comment.INDEX_BEGIN)
+    assert rendered.endswith(section_comment.INDEX_END)
+    assert "| 當前結論 | https://github.com/tarrragon/claude/issues/81#issuecomment-1 |" in rendered
+    assert "| 方案評估 | https://github.com/tarrragon/claude/issues/81#issuecomment-2 |" in rendered
+
+
+# --- validate_owner：init/add/transfer-owner 共用的 owner 格式驗證 ---
+
+
+def test_validate_owner_accepts_kebab_prefix_with_numeric_suffix():
+    section_comment.validate_owner("flutter-balance-77")  # 不拋例外即通過
+
+
+def test_validate_owner_rejects_agent_name_without_numeric_suffix():
+    with pytest.raises(ValueError, match="owner 格式不符"):
+        section_comment.validate_owner("framework-issue-curator")
+
+
+def test_validate_owner_rejects_underscore_separated_form():
+    with pytest.raises(ValueError, match="owner 格式不符"):
+        section_comment.validate_owner("flutter_balance-pm")
+
+
 def test_load_sections_spec_rejects_missing_content_field(tmp_path):
     spec_file = tmp_path / "sections.json"
     spec_file.write_text(json.dumps([{"name": "當前結論"}]), encoding="utf-8")
@@ -153,7 +182,7 @@ def test_init_posts_all_sections_then_backfills_index_once(tmp_path):
     ) as run:
         rc = section_comment.main(
             [
-                "init", "81", "--owner", "test-session", "--sections-file", str(sections_file),
+                "init", "81", "--owner", "test-session-1", "--sections-file", str(sections_file),
                 "--dedup-keywords", "測試關鍵字",
             ]
         )
@@ -162,13 +191,80 @@ def test_init_posts_all_sections_then_backfills_index_once(tmp_path):
     api_calls = [c for c in run.call_args_list if c.args[0][:2] == ["gh", "api"]]
     assert len(api_calls) == 2
     first_body = api_calls[0].args[0][-1]
-    assert first_body == "body=<!-- section: 當前結論 owner: test-session -->\n## 當前結論\n內容 A"
+    assert first_body == "body=<!-- section: 當前結論 owner: test-session-1 -->\n## 當前結論\n內容 A"
 
     written_body = captured["body"]
     assert "既有內容" in written_body
     assert section_comment.INDEX_BEGIN in written_body
     assert "https://github.com/tarrragon/claude/issues/81#issuecomment-1" in written_body
     assert "https://github.com/tarrragon/claude/issues/81#issuecomment-2" in written_body
+
+
+def test_init_backfills_schema_marker_when_missing_in_single_patch(tmp_path):
+    """body 缺 fw-issue-schema 標記時，init 於索引回填的同一次 PATCH 內連同
+    標記一併補上（首行），不觸發第二次 `gh issue edit`（見票 why：原本兩次
+    手工 PATCH 順序未定義，有並行覆蓋窗口）。"""
+    sections_file = tmp_path / "sections.json"
+    sections_file.write_text(
+        json.dumps([{"name": "當前結論", "content": "## 當前結論\n內容"}]), encoding="utf-8"
+    )
+    post_urls = [("https://github.com/tarrragon/claude/issues/81#issuecomment-1", 1)]
+    captured = {}
+    with mock.patch.object(
+        section_comment.subprocess, "run", side_effect=_init_side_effect(post_urls, captured)
+    ) as run:
+        rc = section_comment.main(
+            [
+                "init", "81", "--owner", "test-session-1", "--sections-file", str(sections_file),
+                "--dedup-keywords", "測試關鍵字",
+            ]
+        )
+    assert rc == 0
+    written_body = captured["body"]
+    assert written_body.startswith(section_comment.FW_ISSUE_SCHEMA_MARKER)
+    edit_calls = [c for c in run.call_args_list if c.args[0][:3] == ["gh", "issue", "edit"]]
+    assert len(edit_calls) == 1
+
+
+def test_init_does_not_duplicate_schema_marker_when_already_present(tmp_path):
+    """body 已含 fw-issue-schema 標記時，init 原樣保留，不重複插入第二則。"""
+    sections_file = tmp_path / "sections.json"
+    sections_file.write_text(
+        json.dumps([{"name": "當前結論", "content": "## 當前結論\n內容"}]), encoding="utf-8"
+    )
+    captured = {}
+
+    def _run(args, **kwargs):
+        if args[:3] == ["gh", "search", "issues"]:
+            return _completed(stdout=json.dumps([]))
+        if args[:2] == ["gh", "api"] and args[2].endswith("/comments") and "--method" not in args:
+            return _completed(
+                stdout=json.dumps(
+                    {"id": 1, "html_url": "https://github.com/tarrragon/claude/issues/81#issuecomment-1"}
+                )
+            )
+        if args[:3] == ["gh", "issue", "view"]:
+            return _completed(
+                stdout=json.dumps(
+                    {"body": f"{section_comment.FW_ISSUE_SCHEMA_MARKER}\n\n## 摘要\n\n既有內容"}
+                )
+            )
+        if args[:3] == ["gh", "issue", "edit"]:
+            body_file = Path(args[args.index("--body-file") + 1])
+            captured["body"] = body_file.read_text(encoding="utf-8")
+            return _completed(stdout="")
+        raise AssertionError(f"未預期的 gh 呼叫：{args}")
+
+    with mock.patch.object(section_comment.subprocess, "run", side_effect=_run):
+        rc = section_comment.main(
+            [
+                "init", "81", "--owner", "test-session-1", "--sections-file", str(sections_file),
+                "--dedup-keywords", "測試關鍵字",
+            ]
+        )
+    assert rc == 0
+    written_body = captured["body"]
+    assert written_body.count(section_comment.FW_ISSUE_SCHEMA_MARKER) == 1
 
 
 def test_init_prints_dedup_report_before_creating_sections(tmp_path, capsys):
@@ -184,15 +280,18 @@ def test_init_prints_dedup_report_before_creating_sections(tmp_path, capsys):
         if args[:3] == ["gh", "search", "issues"]:
             return _completed(
                 stdout=json.dumps(
-                    [{"number": 82, "title": "既有相關 issue", "url": "https://x/82", "state": "open"}]
+                    [{"number": 82, "title": "既有相關 issue", "url": "https://x/82", "state": "open", "body": ""}]
                 )
             )
+        if args[:2] == ["gh", "api"] and "--paginate" in args:
+            # 命中位置判定對候選 issue 讀取全部 comment（見 _has_comment_match）。
+            return _completed(stdout=json.dumps([]))
         return _init_side_effect(post_urls, captured)(args, **kwargs)
 
     with mock.patch.object(section_comment.subprocess, "run", side_effect=_run):
         rc = section_comment.main(
             [
-                "init", "81", "--owner", "test-session", "--sections-file", str(sections_file),
+                "init", "81", "--owner", "test-session-1", "--sections-file", str(sections_file),
                 "--dedup-keywords", "元件契約",
             ]
         )
@@ -231,7 +330,7 @@ def test_init_reports_partial_success_count_on_mid_failure(tmp_path, capsys):
     with mock.patch.object(section_comment.subprocess, "run", side_effect=_run):
         rc = section_comment.main(
             [
-                "init", "81", "--owner", "test-session", "--sections-file", str(sections_file),
+                "init", "81", "--owner", "test-session-1", "--sections-file", str(sections_file),
                 "--dedup-keywords", "測試關鍵字",
             ]
         )
@@ -245,7 +344,7 @@ def test_init_rejects_empty_sections_file(tmp_path, capsys):
     sections_file.write_text("[]", encoding="utf-8")
     rc = section_comment.main(
         [
-            "init", "81", "--owner", "test-session", "--sections-file", str(sections_file),
+            "init", "81", "--owner", "test-session-1", "--sections-file", str(sections_file),
             "--dedup-keywords", "測試關鍵字",
         ]
     )
@@ -261,9 +360,27 @@ def test_init_requires_dedup_keywords_flag(tmp_path):
     )
     with pytest.raises(SystemExit) as exc_info:
         section_comment.main(
-            ["init", "81", "--owner", "test-session", "--sections-file", str(sections_file)]
+            ["init", "81", "--owner", "test-session-1", "--sections-file", str(sections_file)]
         )
     assert exc_info.value.code == 2
+
+
+@pytest.mark.parametrize("bad_owner", ["framework-issue-curator", "flutter_balance-pm"])
+def test_init_rejects_invalid_owner_format(tmp_path, capsys, bad_owner):
+    sections_file = tmp_path / "sections.json"
+    sections_file.write_text(
+        json.dumps([{"name": "當前結論", "content": "內容"}]), encoding="utf-8"
+    )
+    rc = section_comment.main(
+        [
+            "init", "81", "--owner", bad_owner, "--sections-file", str(sections_file),
+            "--dedup-keywords", "測試關鍵字",
+        ]
+    )
+    assert rc == gh_common.EXIT_DEGRADED
+    err = capsys.readouterr().err
+    assert "owner 格式不符" in err
+    assert "flutter-balance-77" in err
 
 
 # --- owned-issues 登記檔寫入：init／update 成功後同步落地一筆登記 ---
@@ -284,7 +401,7 @@ def test_init_records_owned_issue_after_successful_section_creation(tmp_path):
     ), mock.patch.object(section_comment, "record_owned_issue") as record:
         rc = section_comment.main(
             [
-                "init", "81", "--owner", "test-session", "--sections-file", str(sections_file),
+                "init", "81", "--owner", "test-session-1", "--sections-file", str(sections_file),
                 "--dedup-keywords", "測試關鍵字",
             ]
         )
@@ -293,8 +410,200 @@ def test_init_records_owned_issue_after_successful_section_creation(tmp_path):
     number, owner, updated_at = record.call_args.args
     assert number == 81
     assert isinstance(number, int)
-    assert owner == "test-session"
+    assert owner == "test-session-1"
     assert isinstance(updated_at, str) and updated_at
+
+
+# --- add：對既有 issue 追加單一區段，既有索引列不被覆寫 ---
+
+
+def _add_side_effect(post_url_id, existing_body, captured):
+    """依 gh 參數形態分派回應：POST 單一區段 comment / GET body / edit body。
+
+    與 `_init_side_effect` 的差異：`add` 只 POST 一則 comment（非逐一走
+    sections 清單），且不觸發查重 search（`add` 無 `--dedup-keywords`）。
+    """
+    url, comment_id = post_url_id
+
+    def _run(args, **kwargs):
+        if args[:2] == ["gh", "api"] and args[2].endswith("/comments") and "--method" not in args:
+            return _completed(stdout=json.dumps({"id": comment_id, "html_url": url}))
+        if args[:3] == ["gh", "issue", "view"]:
+            return _completed(stdout=json.dumps({"body": existing_body}))
+        if args[:3] == ["gh", "issue", "edit"]:
+            body_file = Path(args[args.index("--body-file") + 1])
+            captured["body"] = body_file.read_text(encoding="utf-8")
+            return _completed(stdout="")
+        raise AssertionError(f"未預期的 gh 呼叫：{args}")
+
+    return _run
+
+
+def test_add_appends_new_row_without_disturbing_existing_index_rows(tmp_path):
+    """acceptance：add 對已有索引的 issue 執行後，show 列出原有區段加新區段，
+    原有列 comment id（即 URL 中的 issuecomment-<id>）不變。"""
+    content_file = tmp_path / "content.md"
+    content_file.write_text("## 方案評估\n新內容", encoding="utf-8")
+    existing_body = (
+        "## 摘要\n\n"
+        "## 區段索引\n\n"
+        "| 區段 | 永久連結 |\n"
+        "|------|---------|\n"
+        "| 當前結論 | https://github.com/tarrragon/claude/issues/81#issuecomment-1 |\n"
+    )
+    captured = {}
+    with mock.patch.object(
+        section_comment.subprocess,
+        "run",
+        side_effect=_add_side_effect(
+            ("https://github.com/tarrragon/claude/issues/81#issuecomment-2", 2),
+            existing_body,
+            captured,
+        ),
+    ) as run:
+        rc = section_comment.main(
+            [
+                "add", "81", "--owner", "test-session-1", "--name", "方案評估",
+                "--content-file", str(content_file),
+            ]
+        )
+    assert rc == 0
+
+    written_body = captured["body"]
+    assert "| 當前結論 | https://github.com/tarrragon/claude/issues/81#issuecomment-1 |" in written_body
+    assert "| 方案評估 | https://github.com/tarrragon/claude/issues/81#issuecomment-2 |" in written_body
+
+    post_calls = [
+        c for c in run.call_args_list
+        if c.args[0][:2] == ["gh", "api"] and c.args[0][2].endswith("/comments") and "--method" not in c.args[0]
+    ]
+    assert len(post_calls) == 1
+    posted_body = post_calls[0].args[0][-1]
+    assert posted_body == "body=<!-- section: 方案評估 owner: test-session-1 -->\n## 方案評估\n新內容"
+
+
+def test_add_success_message_prints_issue_section_name_and_owner(tmp_path, capsys):
+    """成功訊息比照 transfer-owner 逐字印出結果，供操作者不需另開 comment
+    即可確認 issue、區段名、owner 三項。"""
+    content_file = tmp_path / "content.md"
+    content_file.write_text("內容", encoding="utf-8")
+    existing_body = "## 摘要\n\n無索引表的一般內容"
+    with mock.patch.object(
+        section_comment.subprocess,
+        "run",
+        side_effect=_add_side_effect(
+            ("https://github.com/tarrragon/claude/issues/81#issuecomment-9", 9),
+            existing_body,
+            {},
+        ),
+    ):
+        rc = section_comment.main(
+            [
+                "add", "81", "--owner", "test-session-1", "--name", "當前結論",
+                "--content-file", str(content_file),
+            ]
+        )
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "區段「當前結論」已建立 @ 81" in err
+    assert "owner=test-session-1" in err
+
+
+def test_add_creates_index_table_when_missing(tmp_path):
+    content_file = tmp_path / "content.md"
+    content_file.write_text("內容", encoding="utf-8")
+    existing_body = "## 摘要\n\n無索引表的一般內容"
+    captured = {}
+    with mock.patch.object(
+        section_comment.subprocess,
+        "run",
+        side_effect=_add_side_effect(
+            ("https://github.com/tarrragon/claude/issues/81#issuecomment-9", 9),
+            existing_body,
+            captured,
+        ),
+    ):
+        rc = section_comment.main(
+            [
+                "add", "81", "--owner", "test-session-1", "--name", "當前結論",
+                "--content-file", str(content_file),
+            ]
+        )
+    assert rc == 0
+    written_body = captured["body"]
+    assert section_comment.INDEX_BEGIN in written_body
+    assert "| 當前結論 | https://github.com/tarrragon/claude/issues/81#issuecomment-9 |" in written_body
+    assert "無索引表的一般內容" in written_body
+
+
+def test_add_backfills_schema_marker_when_missing_in_single_patch(tmp_path):
+    """`add` 對 body-only 舊 issue（無標記亦無索引表）附加區段時，同一次
+    PATCH 內連同 fw-issue-schema 標記一併補上，與 `init` 行為一致。"""
+    content_file = tmp_path / "content.md"
+    content_file.write_text("內容", encoding="utf-8")
+    existing_body = "## 摘要\n\n無索引表的一般內容"
+    captured = {}
+    with mock.patch.object(
+        section_comment.subprocess,
+        "run",
+        side_effect=_add_side_effect(
+            ("https://github.com/tarrragon/claude/issues/81#issuecomment-9", 9),
+            existing_body,
+            captured,
+        ),
+    ) as run:
+        rc = section_comment.main(
+            [
+                "add", "81", "--owner", "test-session-1", "--name", "當前結論",
+                "--content-file", str(content_file),
+            ]
+        )
+    assert rc == 0
+    written_body = captured["body"]
+    assert written_body.startswith(section_comment.FW_ISSUE_SCHEMA_MARKER)
+    edit_calls = [c for c in run.call_args_list if c.args[0][:3] == ["gh", "issue", "edit"]]
+    assert len(edit_calls) == 1
+
+
+def test_add_records_owned_issue_after_successful_section_creation(tmp_path):
+    content_file = tmp_path / "content.md"
+    content_file.write_text("內容", encoding="utf-8")
+    existing_body = "## 摘要\n\n無索引"
+    captured = {}
+    with mock.patch.object(
+        section_comment.subprocess,
+        "run",
+        side_effect=_add_side_effect(
+            ("https://github.com/tarrragon/claude/issues/81#issuecomment-9", 9),
+            existing_body,
+            captured,
+        ),
+    ), mock.patch.object(section_comment, "record_owned_issue") as record:
+        rc = section_comment.main(
+            [
+                "add", "81", "--owner", "test-session-1", "--name", "當前結論",
+                "--content-file", str(content_file),
+            ]
+        )
+    assert rc == 0
+    record.assert_called_once()
+    number, owner, updated_at = record.call_args.args
+    assert number == 81
+    assert owner == "test-session-1"
+    assert isinstance(updated_at, str) and updated_at
+
+
+@pytest.mark.parametrize("bad_owner", ["framework-issue-curator", "flutter_balance-pm"])
+def test_add_rejects_invalid_owner_format(tmp_path, capsys, bad_owner):
+    content_file = tmp_path / "content.md"
+    content_file.write_text("內容", encoding="utf-8")
+    rc = section_comment.main(
+        ["add", "81", "--owner", bad_owner, "--name", "當前結論", "--content-file", str(content_file)]
+    )
+    assert rc == gh_common.EXIT_DEGRADED
+    err = capsys.readouterr().err
+    assert "owner 格式不符" in err
+    assert "flutter-balance-77" in err
 
 
 # --- dedup：查重（token 聯集查詢，避免跨 comment AND 語意漏判） ---
@@ -350,44 +659,94 @@ def test_search_issues_by_keyword_raises_on_gh_failure():
             section_comment.search_issues_by_keyword("x")
 
 
+def test_hit_field_labels_detects_title_body_and_comment_positions():
+    """三種命中位置：title／body 由 search 回傳欄位本地子字串比對；comments
+    對該 issue 全部 comment 本地比對（title／body 皆未命中時才會命中）。"""
+    comment_cache = {}
+
+    def _run(args, **kwargs):
+        assert args[:2] == ["gh", "api"] and "--paginate" in args
+        issue_number = int(args[2].split("/")[-2])
+        if issue_number == 3:
+            return _completed(stdout=json.dumps([{"id": 1, "body": "內文提到 元件契約 這個詞"}]))
+        return _completed(stdout=json.dumps([]))
+
+    issue_title_hit = {"number": 1, "title": "元件契約 相關討論", "body": ""}
+    issue_body_hit = {"number": 2, "title": "無關標題", "body": "body 內含 元件契約"}
+    issue_comment_hit = {"number": 3, "title": "無關", "body": "也無關"}
+
+    with mock.patch.object(section_comment.subprocess, "run", side_effect=_run):
+        assert section_comment._hit_field_labels("元件契約", issue_title_hit, comment_cache) == {"title"}
+        assert section_comment._hit_field_labels("元件契約", issue_body_hit, comment_cache) == {"body"}
+        assert section_comment._hit_field_labels("元件契約", issue_comment_hit, comment_cache) == {"comments"}
+
+
+def test_render_dedup_report_includes_matched_tokens_and_hit_fields():
+    """報告每筆命中列出命中詞與命中位置（見 search_duplicates 的
+    matched_tokens／hit_fields）。"""
+    hits = {
+        "元件契約": [
+            {
+                "number": 81, "title": "t", "url": "u", "state": "open",
+                "matched_tokens": ["元件契約"], "hit_fields": ["body", "title"],
+            },
+        ]
+    }
+    report = section_comment.render_dedup_report(["元件契約"], hits)
+    assert "命中詞：元件契約｜命中位置：body、title" in report
+
+
 def test_search_duplicates_unions_tokens_to_cover_cross_comment_terms():
     """重現並修正涵蓋缺口：關鍵字組「skill 拆分」單一 AND 查詢會漏掉某 issue
     （兩詞分屬同一 issue 的不同 comment，gh 多詞 AND 語意要求同一欄位實例內
-    共現）；拆為單詞查詢後聯集才涵蓋。"""
+    共現）；拆為單詞查詢後聯集才涵蓋。命中多個 token 的 issue（79）排在只命中
+    一個 token 的 issue（82）之前（依 matched_tokens 數量遞減排序）。"""
 
     def _run(args, **kwargs):
-        token = args[-1]
-        if token == "skill":
-            return _completed(stdout=json.dumps([{"number": 79, "title": "a", "url": "u1", "state": "open"}]))
-        if token == "拆分":
-            return _completed(
-                stdout=json.dumps(
-                    [
-                        {"number": 79, "title": "a", "url": "u1", "state": "open"},
-                        {"number": 82, "title": "b", "url": "u2", "state": "open"},
-                    ]
+        if args[:3] == ["gh", "search", "issues"]:
+            token = args[-1]
+            if token == "skill":
+                return _completed(stdout=json.dumps([{"number": 79, "title": "a", "url": "u1", "state": "open"}]))
+            if token == "拆分":
+                return _completed(
+                    stdout=json.dumps(
+                        [
+                            {"number": 79, "title": "a", "url": "u1", "state": "open"},
+                            {"number": 82, "title": "b", "url": "u2", "state": "open"},
+                        ]
+                    )
                 )
-            )
-        raise AssertionError(f"未預期的 token：{token}")
+            raise AssertionError(f"未預期的 token：{token}")
+        if args[:2] == ["gh", "api"] and "--paginate" in args:
+            # 命中位置判定對候選 issue 讀取全部 comment（見 _has_comment_match）。
+            return _completed(stdout=json.dumps([]))
+        raise AssertionError(f"未預期的 gh 呼叫：{args}")
 
     with mock.patch.object(section_comment.subprocess, "run", side_effect=_run):
         results, skipped = section_comment.search_duplicates(["skill 拆分"])
-    numbers = sorted(issue["number"] for issue in results["skill 拆分"])
-    assert numbers == [79, 82]
+    hits = results["skill 拆分"]
+    assert [issue["number"] for issue in hits] == [79, 82]
+    assert hits[0]["matched_tokens"] == ["skill", "拆分"]
+    assert hits[1]["matched_tokens"] == ["拆分"]
     assert skipped == 0
 
 
 def test_search_duplicates_skips_failed_token_without_aborting_others(capsys):
     def _run(args, **kwargs):
-        token = args[-1]
-        if token == "壞詞":
-            return _completed(returncode=1, stderr="network error")
-        return _completed(stdout=json.dumps([{"number": 1, "title": "t", "url": "u", "state": "open"}]))
+        if args[:3] == ["gh", "search", "issues"]:
+            token = args[-1]
+            if token == "壞詞":
+                return _completed(returncode=1, stderr="network error")
+            return _completed(stdout=json.dumps([{"number": 1, "title": "t", "url": "u", "state": "open"}]))
+        if args[:2] == ["gh", "api"] and "--paginate" in args:
+            return _completed(stdout=json.dumps([]))
+        raise AssertionError(f"未預期的 gh 呼叫：{args}")
 
     with mock.patch.object(section_comment.subprocess, "run", side_effect=_run):
         results, skipped = section_comment.search_duplicates(["壞詞", "好詞"])
     assert results["壞詞"] == []
-    assert results["好詞"] == [{"number": 1, "title": "t", "url": "u", "state": "open"}]
+    assert [issue["number"] for issue in results["好詞"]] == [1]
+    assert results["好詞"][0]["matched_tokens"] == ["好詞"]
     err = capsys.readouterr().err
     assert "壞詞" in err
     assert "[WARNING]" in err
@@ -399,16 +758,21 @@ def test_search_duplicates_counts_skipped_hyphen_prefixed_token_and_still_unions
     誤判而查詢失敗（實際送出 query），且失敗計數與涵蓋範圍缺口正確反映。"""
 
     def _run(args, **kwargs):
-        token = args[-1]
-        if token == "--force":
-            return _completed(returncode=1, stderr="network error")
-        if token in ("commit", "-a"):
-            return _completed(stdout=json.dumps([{"number": 5, "title": "t", "url": "u", "state": "open"}]))
-        raise AssertionError(f"未預期的 token：{token}")
+        if args[:3] == ["gh", "search", "issues"]:
+            token = args[-1]
+            if token == "--force":
+                return _completed(returncode=1, stderr="network error")
+            if token in ("commit", "-a"):
+                return _completed(stdout=json.dumps([{"number": 5, "title": "t", "url": "u", "state": "open"}]))
+            raise AssertionError(f"未預期的 token：{token}")
+        if args[:2] == ["gh", "api"] and "--paginate" in args:
+            return _completed(stdout=json.dumps([]))
+        raise AssertionError(f"未預期的 gh 呼叫：{args}")
 
     with mock.patch.object(section_comment.subprocess, "run", side_effect=_run):
         results, skipped = section_comment.search_duplicates(["commit -a", "--force"])
     assert [issue["number"] for issue in results["commit -a"]] == [5]
+    assert results["commit -a"][0]["matched_tokens"] == ["-a", "commit"]
     assert results["--force"] == []
     assert skipped == 1
 
@@ -568,6 +932,84 @@ def test_update_skips_registry_write_when_issue_url_missing(tmp_path):
         rc = section_comment.main(["update", "5523472948", "--content-file", str(content_file)])
     assert rc == 0
     record.assert_not_called()
+
+
+# --- transfer-owner：PATCH 首行標記的 owner 欄，內容不變 ---
+
+
+def test_transfer_owner_patches_owner_field_and_preserves_content(tmp_path):
+    def _run(args, **kwargs):
+        if args[:2] == ["gh", "api"] and "--method" not in args:
+            return _completed(
+                stdout=json.dumps(
+                    {"body": "<!-- section: 當前結論 owner: flutter-balance-99 -->\n舊內容不變"}
+                )
+            )
+        if "--method" in args and args[args.index("--method") + 1] == "PATCH":
+            return _completed(stdout=json.dumps({"id": 5523472948}))
+        raise AssertionError(f"未預期的 gh 呼叫：{args}")
+
+    with mock.patch.object(section_comment.subprocess, "run", side_effect=_run) as run:
+        rc = section_comment.main(["transfer-owner", "5523472948", "--to", "flutter-balance-100"])
+    assert rc == 0
+
+    patch_call = next(
+        c for c in run.call_args_list if "--method" in c.args[0] and "PATCH" in c.args[0]
+    )
+    patched_body = patch_call.args[0][-1]
+    assert patched_body == "body=<!-- section: 當前結論 owner: flutter-balance-100 -->\n舊內容不變"
+    # 只呼叫兩次 gh api（GET 既有內容一次、PATCH 一次），不觸碰 body 或其他 comment。
+    assert run.call_count == 2
+
+
+def test_transfer_owner_rejects_comment_without_section_marker(tmp_path, capsys):
+    """非區段 comment（如觀測留言）拒絕轉移 owner，避免誤改。"""
+    with mock.patch.object(
+        section_comment.subprocess,
+        "run",
+        return_value=_completed(
+            stdout=json.dumps({"body": "<!-- observation: 實測 by session-a -->\n觀測內容"})
+        ),
+    ) as run:
+        rc = section_comment.main(["transfer-owner", "999", "--to", "flutter-balance-100"])
+    assert rc == gh_common.EXIT_DEGRADED
+    assert "非區段標記" in capsys.readouterr().err
+    assert run.call_count == 1
+
+
+def test_transfer_owner_records_owned_issue_with_new_owner(tmp_path):
+    def _run(args, **kwargs):
+        if args[:2] == ["gh", "api"] and "--method" not in args:
+            return _completed(
+                stdout=json.dumps(
+                    {
+                        "body": "<!-- section: 當前結論 owner: flutter-balance-99 -->\n內容",
+                        "issue_url": "https://api.github.com/repos/tarrragon/claude/issues/81",
+                    }
+                )
+            )
+        if "--method" in args and args[args.index("--method") + 1] == "PATCH":
+            return _completed(stdout=json.dumps({"id": 5523472948}))
+        raise AssertionError(f"未預期的 gh 呼叫：{args}")
+
+    with mock.patch.object(section_comment.subprocess, "run", side_effect=_run), \
+            mock.patch.object(section_comment, "record_owned_issue") as record:
+        rc = section_comment.main(["transfer-owner", "5523472948", "--to", "flutter-balance-100"])
+    assert rc == 0
+    record.assert_called_once()
+    number, owner, updated_at = record.call_args.args
+    assert number == 81
+    assert owner == "flutter-balance-100"
+    assert isinstance(updated_at, str) and updated_at
+
+
+@pytest.mark.parametrize("bad_owner", ["framework-issue-curator", "flutter_balance-pm"])
+def test_transfer_owner_rejects_invalid_owner_format(bad_owner, capsys):
+    rc = section_comment.main(["transfer-owner", "999", "--to", bad_owner])
+    assert rc == gh_common.EXIT_DEGRADED
+    err = capsys.readouterr().err
+    assert "owner 格式不符" in err
+    assert "flutter-balance-77" in err
 
 
 # --- observe：任何 session 可用，不需 owner，不改 body ---
@@ -780,7 +1222,7 @@ def test_show_output_content(capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "區段索引來源：body 表格" in out
-    assert "當前結論 updated_at=2026-09-03T09:48:40Z" in out
+    assert "當前結論 owner=s updated_at=2026-09-03T09:48:40Z" in out
     assert "觀測流（1 則" in out
     assert "實測結果 by session-a" in out
     assert "索引缺失" not in out
@@ -810,7 +1252,7 @@ def test_show_falls_back_to_marker_scan_when_index_missing(capsys):
     assert rc == 0
     out = capsys.readouterr().out
     assert "索引缺失" in out
-    assert "當前結論 updated_at=2026-09-03T09:48:40Z" in out
+    assert "當前結論 owner=s updated_at=2026-09-03T09:48:40Z" in out
     assert "觀測流（1 則" in out
 
 
@@ -959,6 +1401,43 @@ def test_check_warning_b_triggers_and_lists_newer_observation_urls(capsys):
     assert "[警訊 B][主警訊] 觸發" in out
     assert "https://github.com/tarrragon/claude/issues/81#issuecomment-2" in out
     assert "https://github.com/tarrragon/claude/issues/81#issuecomment-3" in out
+
+
+def test_check_warning_b_multiple_conclusion_sections_report_each_with_owner(capsys):
+    """多 owner 情境：兩則「當前結論*」區段（含後綴區段）各自輸出警訊 B 判定並標 owner。"""
+    body = "## 摘要\n\n無索引"
+    comments = [
+        {
+            "id": 1,
+            "body": "<!-- section: 當前結論 owner: flutter-balance-1 -->\n內容",
+            "updated_at": "2026-09-01T00:00:00Z",
+            "created_at": "2026-08-30T00:00:00Z",
+        },
+        {
+            "id": 2,
+            "body": "<!-- section: 當前結論（unipos：規則 8） owner: unipos-2 -->\n內容",
+            "updated_at": "2026-09-05T00:00:00Z",
+            "created_at": "2026-08-30T00:00:00Z",
+        },
+        {
+            "id": 3,
+            "body": "新觀測",
+            "created_at": "2026-09-02T00:00:00Z",
+            "html_url": "https://github.com/tarrragon/claude/issues/81#issuecomment-3",
+        },
+    ]
+    with mock.patch.object(
+        section_comment.subprocess, "run", side_effect=_show_side_effect(body, comments)
+    ):
+        rc = section_comment.main(["check", "81", "--stale-days", "0"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "[警訊 B][主警訊] 觸發：「當前結論」（owner: flutter-balance-1）" in out
+    assert "https://github.com/tarrragon/claude/issues/81#issuecomment-3" in out
+    assert (
+        "[警訊 B][主警訊] 未觸發：「當前結論（unipos：規則 8）」（owner: unipos-2） "
+        "updated_at=2026-09-05T00:00:00Z 無晚於此的觀測" in out
+    )
 
 
 def test_check_warning_b_no_conclusion_section_reports_not_found(capsys):

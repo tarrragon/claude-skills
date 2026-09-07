@@ -6,15 +6,22 @@
 每個區段是一則具 owner 的 comment，以 comment id 精準編輯；觀測 comment 任何
 session 可隨時附加，不需 owner、不需協商。
 
-三個命令對應三種寫入時機：
+五個命令對應五種寫入時機：
 
 - `init`：**只執行一次**。先逐一 POST 全部區段 comment 取得 id 與永久連結，
   再 GET 現有 body、插入區段索引表、PATCH 一次。之後 body 不再由本工具改寫
   （id 在 comment 建立後才存在，索引無法在建立時就寫入——見 #82 驗證）。
+- `add`：POST 單一區段 comment，於既有索引表追加一列（不存在索引表時建立），
+  供 `init` 之後對同一 issue 新增區段——`init` 每張 issue 只能跑一次，第二個
+  session 原本只能用 `observe`，無法成為區段 owner。
 - `update`：以 comment id PATCH 指定區段，只讀寫該則 comment，不觸碰 body
   或同 issue 其他 comment。更新前讀回既有內容確認首行為區段標記，非區段
   comment（如觀測、一般留言）一律拒絕，避免誤改。
+- `transfer-owner`：PATCH 首行標記的 owner 欄，內容不變，供 owner 移交。
 - `observe`：附加一則觀測 comment，不需 owner、不改 body、不影響既有 comment。
+
+`init`／`add`／`transfer-owner` 共用 `validate_owner` 驗證 owner 識別格式
+（`<kebab-case 前綴>-<數字序號>`），不合法一律 exit 3（見 `EXIT_DEGRADED`）。
 
 區段與觀測以 comment 首行 HTML 註解標記區分（GitHub 渲染時不可見）：
 
@@ -34,15 +41,20 @@ session 可隨時附加，不需 owner、不需協商。
 body），詞彙分屬同一 issue 的不同 comment 時會漏判（見 tests 內
 `test_search_duplicates_unions_tokens_to_cover_cross_comment_terms` 重現與
 `.claude/skills/framework-issue/tests/test_section_comment.py` 同名測試的
-docstring）。拆為單詞查詢後在本工具端聯集，可涵蓋此缺口。
+docstring）。拆為單詞查詢後在本工具端聯集，可涵蓋此缺口。每筆命中另標示
+「命中詞」（哪些 token 命中）與「命中位置」（title／body／comments 任一
+子集，本地比對，見 `_hit_field_labels`），並依命中 token 數遞減排序，供
+人工從大量命中中優先排除只命中單一 token 的雜訊。
 
 `show` 以 body 的區段索引表為入口（`parse_index_table`），依索引列出的
 comment id 分「區段」與「觀測流」兩類；索引缺失時退回全 comment 掃描首行
 標記（`classify_comments`），並在輸出標示「索引缺失」。`check` 輸出三項
-早期警訊（規格見 tarrragon/claude#81「增長語意與早期警訊」）：主警訊為
-「當前結論」區段 `updated_at` 落後最新觀測 comment 超過設定期間；輔助為
-單張 issue comment 數超過閾值；第三項為 body 索引與實際區段 comment 集合
-的一致性比對。三項皆唯讀、不阻擋（exit 0），閾值與期間可由 CLI 參數覆蓋。
+早期警訊（規格見 tarrragon/claude#81「增長語意與早期警訊」）：主警訊逐一
+比對名稱以「當前結論」開頭的全部區段（涵蓋多 owner 以 `add` 附加的後綴
+區段），各自的 `updated_at` 是否落後最新觀測 comment 超過設定期間並標明
+owner；輔助為單張 issue comment 數超過閾值；第三項為 body 索引與實際區段
+comment 集合的一致性比對。三項皆唯讀、不阻擋（exit 0），閾值與期間可由
+CLI 參數覆蓋。
 """
 
 import argparse
@@ -76,6 +88,11 @@ OBSERVATION_MARKER_RE = re.compile(
     r"^<!-- observation: (?P<summary>.+?) by (?P<session>.+?) -->"
 )
 
+# 協定標記：body 含此行代表該 issue 採用 comment-as-section 協定（見
+# comment-as-section-protocol.md 開頭定義）。init／add 回填索引時若 body
+# 缺此標記則於首行 upsert，與索引回填同一次 PATCH 完成（見 _ensure_schema_marker）。
+FW_ISSUE_SCHEMA_MARKER = "<!-- fw-issue-schema: comment-as-section v1 -->"
+
 # body 區段索引表的標記區段（init 回填、之後不再改寫）。
 INDEX_BEGIN = "<!-- section-index -->"
 INDEX_END = "<!-- /section-index -->"
@@ -93,6 +110,12 @@ INDEX_ROW_URL_RE = re.compile(r"https://\S*?issuecomment-\d+")
 
 # 「當前結論」區段名稱字串集中於此常數，check／show 皆引用，不散落。
 CURRENT_CONCLUSION_SECTION_NAME = "當前結論"
+
+# owner 識別格式：<專案目錄 kebab-case 前綴>-<session 序號>，如
+# "flutter-balance-77"。init／add／transfer-owner 共用同一驗證（見
+# validate_owner）——判準明確而執法只掛在單一入口，存量會從另一入口累積
+# （同儕以代理人名稱 "framework-issue-curator" init 七張未被攔下即為一例）。
+OWNER_FORMAT_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*-[0-9]+$")
 
 # check 的兩項閾值：規格（tarrragon/claude#81「增長語意與早期警訊」）定性
 # 描述「輔助訊號」與「某期間」，未給出精確數字。以下為可運作的初始預設
@@ -125,6 +148,18 @@ def render_section_comment(name: str, owner: str, content: str) -> str:
 def render_observation_comment(summary: str, session: str, content: str) -> str:
     """把觀測內容包上首行標記，供 POST 使用。"""
     return f"<!-- observation: {summary} by {session} -->\n{content}"
+
+
+def validate_owner(owner: str) -> None:
+    """驗證 owner 識別格式；不合法時拋 ValueError（呼叫端捕捉後轉為 exit 3
+    降級提示），訊息含格式規則與範例。"""
+    if not OWNER_FORMAT_RE.match(owner):
+        raise ValueError(
+            f"owner 格式不符：'{owner}'。"
+            "須為 <kebab-case 前綴>-<數字序號>，如 'flutter-balance-77'"
+            "（不可為代理人名稱如 'framework-issue-curator'，"
+            "或含底線如 'flutter_balance-pm'）"
+        )
 
 
 def extract_section_marker(comment_body: str):
@@ -181,13 +216,38 @@ def classify_comments(comments: list) -> tuple:
     return sections, stream
 
 
-def render_index(posted_sections: list) -> str:
-    """把已建立區段的 {name, html_url} 清單渲染為可 upsert 的索引區段。"""
+def render_index_table(rows: list) -> str:
+    """把 [{"name":, "url":}, ...] 渲染為可 upsert 的索引區段（表格列）。
+
+    `init`／`add` 共用：`init` 一次性渲染全部剛建立的區段；`add` 併入既有
+    索引列（來自 `parse_index_table`）與新增的一列後整段重渲染，兩者欄位
+    統一為 name/url，呼叫端各自映射（`init` 的來源為 html_url）。
+    """
     lines = [INDEX_BEGIN, INDEX_TABLE_HEADER]
-    for section in posted_sections:
-        lines.append(f"| {section['name']} | {section['html_url']} |")
+    for row in rows:
+        lines.append(f"| {row['name']} | {row['url']} |")
     lines.append(INDEX_END)
     return "\n".join(lines)
+
+
+def render_index(posted_sections: list) -> str:
+    """把已建立區段的 {name, html_url} 清單渲染為可 upsert 的索引區段。"""
+    rows = [{"name": section["name"], "url": section["html_url"]} for section in posted_sections]
+    return render_index_table(rows)
+
+
+def _ensure_schema_marker(body: str) -> str:
+    """若 body 缺 `FW_ISSUE_SCHEMA_MARKER` 則於首行補上；已存在則原樣返回。
+
+    取代原本「先 `gh issue edit` 手動補標記、再 `init` 回填索引」的兩階段
+    流程——兩次手工 PATCH 順序未定義，兩個 session 交錯操作時有並行覆蓋
+    窗口。呼叫端（`cmd_init`／`cmd_add`）在同一次 `write_body` PATCH 內
+    連同索引一併寫入，不增加 PATCH 次數。
+    """
+    body = body or ""
+    if FW_ISSUE_SCHEMA_MARKER in body:
+        return body
+    return f"{FW_ISSUE_SCHEMA_MARKER}\n{body}"
 
 
 def load_sections_spec(path: str) -> list:
@@ -276,8 +336,13 @@ def fetch_body(issue_ref: str) -> str:
     return payload.get("body", "") or ""
 
 
-def write_body(issue_ref: str, body: str) -> int:
-    """以暫存檔透過 --body-file 回寫 body（避免長文字跳脫問題），僅 init 呼叫一次。"""
+def write_body(issue_ref: str, body: str, success_msg: Optional[str] = None) -> int:
+    """以暫存檔透過 --body-file 回寫 body（避免長文字跳脫問題）；`init` 僅呼叫
+    一次，`add` 每次呼叫皆為同一個 issue 的索引回填。`success_msg` 未提供時
+    用回填索引的通用訊息；`cmd_add` 傳入含區段名／owner 的訊息，供操作者從
+    輸出直接確認建立結果（同 `cmd_transfer_owner` 逐字印出結果的取向）。"""
+    if success_msg is None:
+        success_msg = f"body 區段索引已回填 @ {issue_ref}"
     with tempfile.NamedTemporaryFile(
         "w", suffix=".md", delete=False, encoding="utf-8"
     ) as handle:
@@ -286,7 +351,7 @@ def write_body(issue_ref: str, body: str) -> int:
     try:
         return run_gh(
             ["issue", "edit", issue_ref, "--repo", FRAMEWORK_REPO, "--body-file", body_file],
-            success_msg=f"body 區段索引已回填 @ {issue_ref}",
+            success_msg=success_msg,
         )
     finally:
         Path(body_file).unlink(missing_ok=True)
@@ -301,13 +366,17 @@ def search_issues_by_keyword(keyword: str) -> list:
     未加 `--` 時 `gh search issues -a ...` 回 "unknown shorthand flag"）；
     `--` 之後 pflag 停止解析旗標，全部視為位置參數，可安全涵蓋此形態
     （既有測試關鍵字皆無 `-` 開頭，屬 PC-BAL-064 取樣單一格）。
+
+    `--json` 額外取 `body`（原本只取 number/title/url/state）：供
+    `_hit_field_labels` 本地判定命中位置（title／body 本地子字串比對），
+    不需為此額外呼叫 gh。
     """
     result = subprocess.run(
         [
             "gh", "search", "issues",
             "--repo", FRAMEWORK_REPO,
             "--match", "title,body,comments",
-            "--json", "number,title,url,state",
+            "--json", "number,title,url,state,body",
             "--", keyword,
         ],
         capture_output=True,
@@ -319,6 +388,47 @@ def search_issues_by_keyword(keyword: str) -> list:
     return json.loads(result.stdout or "[]")
 
 
+def _has_comment_match(issue_number: int, token: str, comment_cache: dict) -> bool:
+    """對候選 issue 的全部 comment 本地比對是否含 token（大小寫不敏感）。
+
+    每個 issue 的 comment 清單只抓取一次並存入 `comment_cache`，供同一次
+    `search_duplicates` 執行內跨 token／跨關鍵字組重複使用，避免對同一
+    issue 因命中多個 token 而重複呼叫 `gh api`。抓取失敗（網路／權限）時
+    快取空清單並回傳未命中，不中止其餘比對——查重本身的降級不應阻擋整體
+    流程（同 `search_duplicates` 既有的「不阻擋」原則）。
+    """
+    if issue_number not in comment_cache:
+        try:
+            comment_cache[issue_number] = fetch_comments(str(issue_number))
+        except (OSError, subprocess.SubprocessError, RuntimeError):
+            comment_cache[issue_number] = []
+    token_lower = token.lower()
+    return any(
+        token_lower in (comment.get("body", "") or "").lower()
+        for comment in comment_cache[issue_number]
+    )
+
+
+def _hit_field_labels(token: str, issue: dict, comment_cache: dict) -> set:
+    """判定 token 對 issue 的命中位置集合（title／body／comments 任一子集，
+    可並存亦可能三者皆未命中）。title／body 以 search 回傳的欄位本地比對；
+    comments 對該 issue 全部 comment 本地比對（見 `_has_comment_match`，
+    有快取）。
+
+    此為近似判定，非精確重現 GitHub 全文檢索的分詞／詞幹化語意——僅供
+    dedup 報告標示命中位置，協助人工快速排除雜訊，不作為機械判準。
+    """
+    token_lower = token.lower()
+    fields = set()
+    if token_lower in (issue.get("title", "") or "").lower():
+        fields.add("title")
+    if token_lower in (issue.get("body", "") or "").lower():
+        fields.add("body")
+    if _has_comment_match(issue["number"], token, comment_cache):
+        fields.add("comments")
+    return fields
+
+
 def _split_keyword_tokens(keyword_group: str) -> list:
     """把一組查重關鍵字拆為查詢 token；含空白者逐詞查再聯集（見檔頭說明），
     無空白（含單一 CJK 複合詞，如「元件契約」）視為單一 token 原樣查詢。"""
@@ -327,8 +437,12 @@ def _split_keyword_tokens(keyword_group: str) -> list:
 
 
 def search_duplicates(keyword_groups: list) -> tuple:
-    """對每組關鍵字回傳命中 issue 清單（依 issue number 去重、排序），與
-    略過的 token 查詢失敗總數（回傳 `(results, skipped_count)`）。
+    """對每組關鍵字回傳命中 issue 清單，與略過的 token 查詢失敗總數（回傳
+    `(results, skipped_count)`）。每筆命中額外帶 `matched_tokens`（該 issue
+    命中的 token 清單）與 `hit_fields`（命中位置集合，見 `_hit_field_labels`），
+    供 `render_dedup_report` 標示；清單依 `matched_tokens` 數量遞減排序（同
+    數量再依 issue number 遞增），命中多個 token 的 issue 較可能是真實重複，
+    優先排在報告前段。
 
     單一 token 查詢失敗只警告略過，不中止其餘 token 或其他關鍵字組——查重
     本身的降級不應阻擋 init 的既有兩階段流程（查重「不阻擋」原則延伸至此）。
@@ -338,23 +452,43 @@ def search_duplicates(keyword_groups: list) -> tuple:
     """
     results = {}
     skipped = 0
+    comment_cache: dict = {}
     for group in keyword_groups:
         hits_by_number = {}
         for token in _split_keyword_tokens(group):
             try:
                 for issue in search_issues_by_keyword(token):
-                    hits_by_number.setdefault(issue["number"], issue)
+                    entry = hits_by_number.setdefault(
+                        issue["number"], {"issue": issue, "tokens": set(), "fields": set()}
+                    )
+                    entry["tokens"].add(token)
+                    entry["fields"] |= _hit_field_labels(token, issue, comment_cache)
             except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
                 skipped += 1
                 sys.stderr.write(
                     f"[framework-issue][WARNING] 查重關鍵字「{token}」查詢失敗，略過：{exc}\n"
                 )
-        results[group] = [hits_by_number[n] for n in sorted(hits_by_number)]
+        ordered = sorted(
+            hits_by_number.values(),
+            key=lambda entry: (-len(entry["tokens"]), entry["issue"]["number"]),
+        )
+        results[group] = [
+            {
+                **entry["issue"],
+                "matched_tokens": sorted(entry["tokens"]),
+                "hit_fields": sorted(entry["fields"]),
+            }
+            for entry in ordered
+        ]
     return results, skipped
 
 
 def render_dedup_report(keyword_groups: list, results: dict, skipped: int = 0) -> str:
     """組合查重報告：回顯關鍵字集合、逐組列命中清單，提醒標註關係不自動判定。
+
+    每筆命中列出「命中詞」與「命中位置」（見 `search_duplicates` 的
+    `matched_tokens`／`hit_fields`），供人工優先排除只命中單一 token 的
+    雜訊；`results` 傳入時已依命中 token 數遞減排序，此函式不重排。
 
     末行固定重述略過的 token 查詢失敗數（`tail -1` 即可見），使涵蓋範圍
     縮小成為報告本身可見的明確宣告，不只依賴 stderr 的單行警告。
@@ -373,6 +507,12 @@ def render_dedup_report(keyword_groups: list, results: dict, skipped: int = 0) -
                 f"  - #{issue.get('number')} [{issue.get('state', '?')}] {issue.get('title', '')}"
             )
             lines.append(f"    {issue.get('url', '')}")
+            matched_tokens = issue.get("matched_tokens", [])
+            hit_fields = issue.get("hit_fields", [])
+            lines.append(
+                f"    命中詞：{'、'.join(matched_tokens) or '（無）'}"
+                f"｜命中位置：{'、'.join(hit_fields) or '（無）'}"
+            )
         lines.append("")
     lines.append(
         "命中不等於重複：請對每張命中 issue 標註關係（重複／切分／引用），"
@@ -393,11 +533,12 @@ def cmd_init(issue_ref: str, owner: str, sections_file: str, dedup_keywords: lis
     """查重後建立全部區段 comment，取得 id 後回填一次 body 區段索引表。"""
     try:
         issue_ref = normalize_issue_ref(issue_ref)
+        validate_owner(owner)
         sections = load_sections_spec(sections_file)
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         return emit_degraded(
             f"init 前置檢查失敗：{exc}",
-            "確認 issue ref 與 sections-file 格式正確後重試",
+            "確認 issue ref、owner 格式與 sections-file 格式正確後重試",
         )
 
     dedup_results, dedup_skipped = search_duplicates(dedup_keywords)
@@ -431,8 +572,54 @@ def cmd_init(issue_ref: str, owner: str, sections_file: str, dedup_keywords: lis
             "手動確認區段 comment 後重跑索引回填（不重複執行 init 避免重複建立區段）",
         )
 
+    body = _ensure_schema_marker(body)
     new_body = upsert_section(body, INDEX_SECTION_RE, render_index(posted))
     return write_body(issue_ref, new_body)
+
+
+def cmd_add(issue_ref: str, owner: str, name: str, content_file: str) -> int:
+    """建立單一區段 comment，於既有索引表追加一列（不存在索引表時建立）；
+    其他既有列的 comment id／連結不受影響（供 `init` 之後對同一 issue
+    追加新區段，見本 ticket why 段：init 每張 issue 只能跑一次的缺口）。
+    """
+    try:
+        issue_ref = normalize_issue_ref(issue_ref)
+        validate_owner(owner)
+        content = Path(content_file).read_text(encoding="utf-8")
+    except (ValueError, OSError) as exc:
+        return emit_degraded(
+            f"add 前置檢查失敗：{exc}",
+            "確認 issue ref、owner 格式與 content-file 正確後重試",
+        )
+
+    rendered = render_section_comment(name, owner, content)
+    try:
+        result = post_comment(issue_ref, rendered)
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+        return emit_degraded(f"add 建立區段 comment 失敗：{exc}", "檢查網路與權限後重試")
+
+    # 區段 comment 已建立成功，owner 對此區段的擁有關係已確立——即使後續
+    # body 索引回填失敗，登記檔仍應反映此事實（同 cmd_init 取向，見
+    # owned_issues_registry 模組 docstring）。
+    record_owned_issue(int(issue_ref), owner, _now_iso())
+
+    try:
+        body = fetch_body(issue_ref)
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+        return emit_degraded(
+            f"add 已建立區段 comment（{result.get('html_url', '')}），"
+            f"但讀取 body 失敗，索引未更新：{exc}",
+            "手動確認區段 comment 後重跑索引回填（不重複執行 add 避免重複建立區段）",
+        )
+
+    rows = [{"name": row["name"], "url": row["url"]} for row in parse_index_table(body)]
+    rows.append({"name": name, "url": result.get("html_url", "")})
+    body = _ensure_schema_marker(body)
+    new_body = upsert_section(body, INDEX_SECTION_RE, render_index_table(rows))
+    return write_body(
+        issue_ref, new_body,
+        success_msg=f"區段「{name}」已建立 @ {issue_ref}，owner={owner}",
+    )
 
 
 def cmd_update(comment_id: str, content_file: str) -> int:
@@ -475,6 +662,52 @@ def cmd_update(comment_id: str, content_file: str) -> int:
     return 0
 
 
+def cmd_transfer_owner(comment_id: str, new_owner: str) -> int:
+    """PATCH 首行標記的 owner 欄，內容不變；同步登記檔（供 owner 移交，見
+    本 ticket why 段：update 保留首行 owner 標記不變，無命令可改 owner）。
+    """
+    try:
+        validate_owner(new_owner)
+    except ValueError as exc:
+        return emit_degraded(str(exc), "確認 --to 為合法 owner 格式後重試")
+
+    try:
+        existing = fetch_comment(comment_id)
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+        return emit_degraded(
+            f"讀取既有 comment {comment_id} 失敗：{exc}",
+            "確認 comment id 正確且 gh 可存取後重試",
+        )
+
+    marker = extract_section_marker(existing.get("body", ""))
+    if marker is None:
+        return emit_degraded(
+            f"comment {comment_id} 首行非區段標記，拒絕轉移 owner（避免誤改觀測或一般 comment）",
+            "確認 comment id 指向一個具 <!-- section: ... owner: ... --> 標記的區段 comment",
+        )
+
+    # 內容不變：existing body 為「首行標記 + 內容」，切除首行後重新組裝
+    # 相同內容、僅替換 owner 欄。
+    _, _, content = (existing.get("body", "") or "").partition("\n")
+    rendered = render_section_comment(marker["name"], new_owner, content)
+    try:
+        patch_comment(comment_id, rendered)
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+        return emit_degraded(
+            f"轉移 owner 失敗（comment {comment_id}）：{exc}", "檢查權限與網路後重試"
+        )
+
+    issue_number = _issue_number_from_comment(existing)
+    if issue_number is not None:
+        record_owned_issue(issue_number, new_owner, _now_iso())
+
+    sys.stderr.write(
+        f"[framework-issue] 區段「{marker['name']}」owner 已由 "
+        f"{marker['owner']} 轉移至 {new_owner} @ comment {comment_id}\n"
+    )
+    return 0
+
+
 def cmd_observe(issue_ref: str, summary: str, session: str, content_file: str) -> int:
     """附加一則觀測 comment，不需 owner、不改 body、不影響既有 comment。"""
     try:
@@ -497,13 +730,19 @@ def cmd_observe(issue_ref: str, summary: str, session: str, content_file: str) -
 
 
 def _render_show_sections(rows: list, comments_by_id: dict) -> list:
-    """把區段列（來自索引或標記掃描）渲染為輸出行，含 comment 找不到時的標示。"""
+    """把區段列（來自索引或標記掃描）渲染為輸出行，含 comment 找不到時的標示。
+
+    owner 從 comment body 首行標記回推（`_owner_of`，與 `check` 共用）——
+    `transfer-owner` 是唯一會改 owner 的操作，`show` 原本不印 owner 使驗證
+    手段不在同一套 CLI 內，操作者需另外開 comment 才能確認結果。
+    """
     lines = [f"## 區段（{len(rows)} 則）"]
     for row in rows:
         comment = comments_by_id.get(row["id"])
         updated_at = comment.get("updated_at", "") if comment else "(comment 未找到)"
+        owner = _owner_of(comment) if comment else "(comment 未找到)"
         url = row["url"] or (comment.get("html_url", "") if comment else "")
-        lines.append(f"- {row['name']} updated_at={updated_at}")
+        lines.append(f"- {row['name']} owner={owner} updated_at={updated_at}")
         lines.append(f"  {url}")
     return lines
 
@@ -596,22 +835,33 @@ def _check_index_consistency(index_rows: list, sections: dict) -> str:
     return "\n".join(lines)
 
 
-def _find_conclusion_comment(sections: dict):
-    """從區段 dict 找出名稱為「當前結論」的 comment；找不到回傳 None。"""
-    return next(
+def _find_conclusion_comments(sections: dict) -> list:
+    """從區段 dict 找出名稱以「當前結論」開頭的全部 comment（依 comment id
+    排序，供多 owner 場景逐則比對）。單一「當前結論」時回傳單一元素清單，
+    既有行為不變；多 owner 以 `add` 附加的後綴區段（如「當前結論（<consumer>：
+    <主題>）」）現一併涵蓋（見本 ticket why：字串相等定位使第二 owner 缺主
+    警訊涵蓋）。"""
+    return sorted(
         (
-            entry["comment"]
+            entry
             for entry in sections.values()
-            if entry["name"] == CURRENT_CONCLUSION_SECTION_NAME
+            if entry["name"].startswith(CURRENT_CONCLUSION_SECTION_NAME)
         ),
-        None,
+        key=lambda entry: entry["comment"].get("id") or 0,
     )
 
 
-def _format_staleness_hit(conclusion: dict, newer: list, stale_days: int) -> str:
+def _owner_of(comment: dict) -> str:
+    """從區段 comment body 首行標記回推 owner。sections dict（來自
+    classify_comments）只保留 name，未保留 owner，故於此按需重新解析。"""
+    marker = extract_section_marker(comment.get("body", "") or "")
+    return marker["owner"] if marker else "?"
+
+
+def _format_staleness_hit(name: str, owner: str, conclusion: dict, newer: list, stale_days: int) -> str:
     """組合警訊 B 觸發時的訊息：落後期間 + 全部新增觀測 comment 的 html_url。"""
     lines = [
-        f"[警訊 B][主警訊] 觸發：「{CURRENT_CONCLUSION_SECTION_NAME}」"
+        f"[警訊 B][主警訊] 觸發：「{name}」（owner: {owner}）"
         f"updated_at={conclusion.get('updated_at')} 落後最新觀測 "
         f"{newer[-1].get('created_at')}，超過設定期間 {stale_days} 天",
         "  當前結論之後新增的觀測 comment：",
@@ -620,31 +870,46 @@ def _format_staleness_hit(conclusion: dict, newer: list, stale_days: int) -> str
     return "\n".join(lines)
 
 
-def _check_conclusion_staleness(sections: dict, stream: list, stale_days: int) -> str:
-    """警訊 B（主警訊）：「當前結論」區段 updated_at 落後最新觀測超過設定期間。
-
-    命中時列出 updated_at 之後新增的全部觀測 comment 之 html_url（不只超過
-    期間的那些），供 owner 直接整合。
-    """
-    conclusion = _find_conclusion_comment(sections)
-    if conclusion is None:
-        return f"[警訊 B][主警訊] 找不到「{CURRENT_CONCLUSION_SECTION_NAME}」區段 comment，無法比對"
-    if not stream:
-        return "[警訊 B][主警訊] 無觀測 comment，無需比對"
-
-    conclusion_updated = _parse_timestamp(conclusion.get("updated_at", ""))
+def _check_single_conclusion(name: str, comment: dict, stream: list, stale_days: int) -> str:
+    """對單一「當前結論*」區段比對 updated_at 是否落後最新觀測，輸出標明 owner。"""
+    owner = _owner_of(comment)
+    label = f"「{name}」（owner: {owner}）"
+    conclusion_updated = _parse_timestamp(comment.get("updated_at", ""))
     newer = sorted(
         (c for c in stream if _parse_timestamp(c.get("created_at", "")) > conclusion_updated),
         key=lambda c: c.get("created_at", ""),
     )
     if not newer:
-        return f"[警訊 B][主警訊] 未觸發：無晚於 updated_at={conclusion.get('updated_at')} 的觀測"
+        return (
+            f"[警訊 B][主警訊] 未觸發：{label} "
+            f"updated_at={comment.get('updated_at')} 無晚於此的觀測"
+        )
 
     gap = _parse_timestamp(newer[-1].get("created_at", "")) - conclusion_updated
     if gap <= timedelta(days=stale_days):
-        return f"[警訊 B][主警訊] 未觸發：距最新觀測 {gap} <= 設定期間 {stale_days} 天"
+        return f"[警訊 B][主警訊] 未觸發：{label} 距最新觀測 {gap} <= 設定期間 {stale_days} 天"
 
-    return _format_staleness_hit(conclusion, newer, stale_days)
+    return _format_staleness_hit(name, owner, comment, newer, stale_days)
+
+
+def _check_conclusion_staleness(sections: dict, stream: list, stale_days: int) -> str:
+    """警訊 B（主警訊）：名稱以「當前結論」開頭的全部區段，逐則比對 updated_at
+    是否落後最新觀測超過設定期間，各自輸出並標明 owner（多 owner 場景見
+    `_find_conclusion_comments`）。
+
+    命中時列出該區段 updated_at 之後新增的全部觀測 comment 之 html_url（不只
+    超過期間的那些），供 owner 直接整合。
+    """
+    conclusions = _find_conclusion_comments(sections)
+    if not conclusions:
+        return f"[警訊 B][主警訊] 找不到「{CURRENT_CONCLUSION_SECTION_NAME}」區段 comment，無法比對"
+    if not stream:
+        return "[警訊 B][主警訊] 無觀測 comment，無需比對"
+
+    return "\n".join(
+        _check_single_conclusion(entry["name"], entry["comment"], stream, stale_days)
+        for entry in conclusions
+    )
 
 
 def build_check_output(body: str, comments: list, comment_threshold: int, stale_days: int) -> str:
@@ -678,6 +943,7 @@ _KEYWORD_VALUE_STOP_FLAGS = frozenset(
     {
         "-h", "--help", "--owner", "--sections-file", "--content-file",
         "--summary", "--session", "--comment-threshold", "--stale-days",
+        "--name", "--to",
     }
 )
 _MULTI_VALUE_KEYWORD_FLAGS = frozenset({"--keywords", "--dedup-keywords"})
@@ -723,7 +989,7 @@ def _unescape_dash_prefixed_value(value: str) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="framework-issue section",
-        description="comment-as-section 協作協定的寫入路徑（init/update/observe）",
+        description="comment-as-section 協作協定的寫入路徑（init/add/update/transfer-owner/observe）",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -740,6 +1006,14 @@ def build_parser() -> argparse.ArgumentParser:
              "輸出，不自動判定、不阻擋建立）",
     )
 
+    p_add = sub.add_parser(
+        "add", help="建立單一區段 comment，於既有索引表追加一列（不存在索引表時建立）"
+    )
+    p_add.add_argument("issue_ref", help="framework issue ref（如 tarrragon/claude#81 或純號 81）")
+    p_add.add_argument("--owner", required=True, help="區段建立者/維護者 session 識別")
+    p_add.add_argument("--name", required=True, help="區段名稱")
+    p_add.add_argument("--content-file", required=True, help="區段內容檔（不含首行標記）")
+
     p_dedup = sub.add_parser(
         "dedup", help="唯讀：以標題與 comment 內文查既有 issue，列命中清單不建立 issue"
     )
@@ -751,6 +1025,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_update = sub.add_parser("update", help="以 comment id PATCH 更新既有區段內容")
     p_update.add_argument("comment_id", help="區段 comment 的 GitHub comment id")
     p_update.add_argument("--content-file", required=True, help="新內容檔（不含首行標記）")
+
+    p_transfer = sub.add_parser(
+        "transfer-owner", help="PATCH 既有區段 comment 首行標記的 owner 欄，內容不變"
+    )
+    p_transfer.add_argument("comment_id", help="區段 comment 的 GitHub comment id")
+    p_transfer.add_argument("--to", required=True, help="新 owner 識別")
 
     p_observe = sub.add_parser("observe", help="附加觀測 comment，任何 session 可用不需 owner")
     p_observe.add_argument("issue_ref", help="framework issue ref（如 tarrragon/claude#81 或純號 81）")
@@ -790,10 +1070,14 @@ def main(argv=None) -> int:
             parsed.issue_ref, parsed.owner, parsed.sections_file,
             [_unescape_dash_prefixed_value(k) for k in parsed.dedup_keywords],
         )
+    if parsed.command == "add":
+        return cmd_add(parsed.issue_ref, parsed.owner, parsed.name, parsed.content_file)
     if parsed.command == "dedup":
         return cmd_dedup([_unescape_dash_prefixed_value(k) for k in parsed.keywords])
     if parsed.command == "update":
         return cmd_update(parsed.comment_id, parsed.content_file)
+    if parsed.command == "transfer-owner":
+        return cmd_transfer_owner(parsed.comment_id, parsed.to)
     if parsed.command == "observe":
         return cmd_observe(parsed.issue_ref, parsed.summary, parsed.session, parsed.content_file)
     if parsed.command == "show":
