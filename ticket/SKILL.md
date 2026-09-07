@@ -4,7 +4,7 @@ description: 'Use this skill whenever the user wants to create, track, query, or
 argument-hint: '<subcommand> [args]'
 allowed-tools: Bash(ticket *), Read, Write, Edit, Grep, Glob
 metadata:
-  version: 2.20.0
+  version: 2.21.0
 ---
 
 # Ticket System v1.0
@@ -40,6 +40,23 @@ metadata:
 | stopped | agent process 終止 | SubagentStop（自然結束）/ `shutdown_request` approve / session 結束 | job 完成後 runner 回收 |
 
 idle 態不改變 agent = runner 的核心類比（身份仍在 claim 綁定、工作區仍隔離），只是擴展 runner 生命週期從「單 job 即銷」到「可選續用多 job」。PM 對 idle agent 的續用/放生判準與回收 SOP 見 `.claude/pm-rules/parallel-dispatch.md`「idle agent 回收 SOP」章節。
+
+---
+
+## Ticket 狀態與程式碼提交的 root 分離（worktree 場景）
+
+在 linked worktree（`/worktree create` 建立）內執行 `ticket track` 系列命令時，ticket 狀態（md 讀寫與其 auto-commit）與程式碼提交走**兩條不同的 root 解析路徑**，行為刻意相反：
+
+| 操作類型 | 對應函式 | linked worktree 內的 root 解析 |
+|---------|---------|-------------------------------|
+| ticket 狀態（`claim` / `append-log` / `check-acceptance` / `set-*` 等讀寫 ticket md） | `paths.py:get_ticket_state_root()` | **反向回推主倉庫根目錄**，統一寫入主倉庫，不進 worktree 分支 |
+| 程式碼提交（`ticket track commit`） | `project_root.py:resolve_project_cwd()` | 維持 worktree 感知，commit 進該 worktree 對應分支 |
+
+**Why**：若 ticket 狀態也採 worktree 感知（跟隨呼叫端 cwd），多個隔離 agent 會各自把票面寫進自己的 worktree 分支——PM 在主倉庫看不到最新狀態（觀察性失效），且 body 內容不會隨 worktree 分支合併帶回主倉庫。受控實驗實測：並行派發的 worktree agent 在此設計下全數出現票面分裂。統一寫入主倉庫消除分裂，使 ticket 狀態恆有單一事實來源。
+
+**Consequence（誤判為缺陷時）**：worktree 內執行 `ticket track full <id>` 讀到的內容是主倉庫版本，不是該 worktree 分支上的版本；這是設計行為，不是 CLI 的 cwd 解析漏洞。誤判並「修復」（例如讓 ticket 狀態也改用 worktree 感知）會反轉此設計，重新引入票面分裂風險——曾有 IMP ticket 依此誤判方向規劃修復，經查證後改為本節文件澄清。
+
+**Action**：worktree 內需要確認「某次 ticket 狀態寫入是否已進入主倉庫」時，直接在主倉庫 cwd（或用 `git -C <主倉庫路徑>`）查詢，不依賴該 worktree working tree 內的 ticket md 檔案內容（後者不會被 ticket 狀態寫入更新）。完整設計理由見 `.claude/skills/ticket/ticket_system/lib/paths.py` 的 `get_ticket_state_root()` docstring；worktree 隔離邊界的完整脈絡（含 daemon-rooted 寫入工具洩漏等其他項目）見 `.claude/skills/worktree/SKILL.md`「Base ref 與隔離邊界」節。
 
 ---
 
@@ -167,7 +184,7 @@ ticket create --version 0.31.0 --wave 4 --action "實作" --target "XXX"  # 建�
 | `track depth`       | 查詢嵌套深度與 can_descend（沿 parent_id 鏈） | `ticket track depth <id>.5`                          |
 | `track parallel-check` | 偵測子任務/兄弟 ticket 檔案衝突（對齊 askuserquestion-rules 規則 7） | `ticket track parallel-check <id>` |
 | `track dispatch-validate` | Context Bundle 自動填料合理性檢查（C 方案安全網；exit 0=pass / 1=軟警告 / 2=硬失敗或 IO 錯誤；**與 dispatch-check 的 exit code 語意不共享**，需以命令名稱判別） | `ticket track dispatch-validate <id>` |
-| `track dispatch-readiness` | 派發前認知負擔閾值檢查（三項閾值：功能職責數 / 修改檔案數 / Context Bundle tokens；exit 0=pass / 1=軟警告 / 2=強制拆分或 IO 錯誤；**與 dispatch-check / dispatch-validate 的 exit code 語意不共享**；閾值 1 以 acceptance 條目近似，含驗證類條目時可能高估，PM 於 WARN/FAIL 應手動覆核——詳見 references/track-command.md） | `ticket track dispatch-readiness <id>` |
+| `track dispatch-readiness` | 派發前綜合就緒度檢查（閾值 1-3：功能職責數／修改檔案數／Context Bundle tokens，超軟上限 warn、超強制拆分閾值 fail；檢查 4/5 為 warn-only 啟發式：acceptance 與寫入集一致性／where.files 路徑存在性；檢查 6 為強制 fail：acceptance 提及路徑須被 where.files 涵蓋；exit 0=pass／1=軟警告／2=閾值 1-3 任一超強制拆分閾值 或 檢查 6 未過 或 IO 錯誤；**與 dispatch-check / dispatch-validate 的 exit code 語意不共享**；exit 2 處置依 fail 來源分流（拆票 vs 補 where.files／改寫 acceptance），閾值 1 以 acceptance 條目近似可能高估——詳見 references/track-command.md） | `ticket track dispatch-readiness <id>` |
 | `show`              | 顯示 Ticket（含渲染）      | `ticket show <id>` / `ticket show <id> -r`                           |
 | `handoff`           | 任務交接                   | `/ticket handoff <id> --to-sibling <id2>`                   |
 | `resume`            | 恢復任務                   | `/ticket resume <id>`                                                      |
