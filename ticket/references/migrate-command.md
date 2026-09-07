@@ -2,6 +2,14 @@
 
 Ticket ID 遷移（支援單一和批量遷移）。
 
+> **何時讀**：遷移 Ticket ID 時——單一或批量遷移前的前置檢查、遷移邏輯、collision detection、備份機制或選項說明。**亦由此進入**：無（`grep -rn` 排除 `SKILL.md` 路由表本檔自身列後零命中，目前無其他檔案的步驟把讀者送到本檔）。
+>
+> **同目錄**：`workflow-migrate.md`（ID 遷移的決策樹，與本檔互補：決策樹在那份、CLI 用法與備份/collision 細節在本檔）。
+>
+> **溯源**：本檔於本專案匯入 commit `f375ae675` 時即已存在；本機 git log 僅見後續章節 TOC 補齊，未見原始拆分點（可用 `git log --oneline -- references/migrate-command.md` 查證）。
+
+本檔章節：〈基本用法〉〈前置檢查（強制）〉〈單一遷移範例〉〈批量遷移配置檔案格式〉〈遷移邏輯〉〈Collision Detection〉〈備份機制〉〈Flag 說明〉。
+
 ## 基本用法
 
 ```bash
@@ -144,7 +152,9 @@ migrations:
 | `children`       | 更新子任務 ID 引用      |
 | `source_ticket`  | 更新來源引用            |
 
-## Collision Detection（W14-048）
+## Collision Detection
+
+> 來源：W14-048
 
 遷移會檢查目標 ID 是否與既有 Ticket 撞檔：
 
@@ -164,9 +174,9 @@ migrations:
 - 備份位置：`.claude/migration-backups/{timestamp}/`
 - 支援 `--no-backup` 停用備份
 
-## 選項說明
+## Flag 說明
 
-| 選項            | 說明                               |
+| Flag            | 說明                               |
 | --------------- | ---------------------------------- |
 | `--config FILE` | 批量遷移配置檔案（.yaml 或 .json） |
 | `--version VER` | 指定版本（預設自動偵測）           |

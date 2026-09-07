@@ -15,7 +15,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 # dispatch-active.json 屬跨 agent 協調狀態，root 解析改用
 # get_ticket_state_root()（非 get_project_root()）——linked worktree 內
@@ -24,12 +26,38 @@ from ticket_system.lib.paths import get_ticket_state_root
 
 _DISPATCH_ACTIVE_RELPATH = Path(".claude/dispatch-active.json")
 
+# 3-H 個案 1／2：dispatch-check 原判定只收「dispatches 是否為空」，無記錄
+# 新鮮度維度，PM 依 WARN 後無可執行下一步（無從分辨活躍派發是剛發出還是
+# 已逾時遺留）。沿用 track_dashboard.DEFAULT_STALE_THRESHOLD_MIN（60 分鐘）
+# 同一新鮮度慣例，不另立門檻常數。
+_STALE_THRESHOLD_MIN = 60
 
-def _format_entry(entry: dict) -> str:
+
+def _format_age(dispatched_at: object, now: datetime) -> str:
+    """回傳 dispatched_at 距 now 的新鮮度標註；無法解析（缺失/格式錯誤/
+    未來時間）回傳空字串，不猜測。"""
+    if not isinstance(dispatched_at, str) or not dispatched_at.strip():
+        return ""
+    try:
+        ts = datetime.fromisoformat(dispatched_at.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    age_minutes = (now - ts).total_seconds() / 60
+    if age_minutes < 0:
+        return ""
+    if age_minutes >= _STALE_THRESHOLD_MIN:
+        return f" [STALE {age_minutes:.0f}min]"
+    return f" ({age_minutes:.0f}min)"
+
+
+def _format_entry(entry: dict, now: Optional[datetime] = None) -> str:
     desc = entry.get("agent_description", "(unknown)")
     tid = entry.get("ticket_id") or "(no ticket)"
     ts = entry.get("dispatched_at", "(no timestamp)")
-    return f"  - {desc} | ticket: {tid} | {ts}"
+    age = _format_age(entry.get("dispatched_at"), now) if now is not None else ""
+    return f"  - {desc} | ticket: {tid} | {ts}{age}"
 
 
 def execute_dispatch_check(args: argparse.Namespace) -> int:
@@ -68,12 +96,24 @@ def execute_dispatch_check(args: argparse.Namespace) -> int:
         print("[PASS] 無活躍派發，可繼續")
         return 0
 
+    now = datetime.now(timezone.utc)
+    stale_count = sum(
+        1
+        for entry in dispatches
+        if isinstance(entry, dict) and "[STALE" in _format_age(entry.get("dispatched_at"), now)
+    )
     print(f"[WARN] 有 {len(dispatches)} 個活躍派發：")
     for entry in dispatches:
         if isinstance(entry, dict):
-            print(_format_entry(entry))
+            print(_format_entry(entry, now))
         else:
             print(f"  - (malformed entry: {entry!r})")
+    if stale_count:
+        print(
+            f"[WARN] 其中 {stale_count} 筆逾 {_STALE_THRESHOLD_MIN} 分鐘未見更新"
+            "（[STALE] 標記），可能為遺留記錄，建議對照 `track sessions` 或"
+            "人工清理"
+        )
     return 1
 
 

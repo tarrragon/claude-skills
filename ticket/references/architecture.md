@@ -1,15 +1,74 @@
-# Ticket 系統架構
+# Ticket 系統架構、術語與維護
+
+> **何時讀**：讀懂系統模型類比、查一個多 PM 協調層或票務自造詞（lease／registry／票面／落票…）、追共用模組職責或自動化分析邏輯，或要安裝、覆核 skill 自身測試套件時，進本檔。**亦由此進入**：`SKILL.md` 檔頭引言（模型與術語指標）、`SKILL.md`〈執行方式〉節（安裝指令指標）、`SKILL.md`〈執行方式〉節末（覆核測試指令指標）、`track-command.md`「Python 測試路徑推導」小節末（覆核測試指令指標）。
+>
+> **同目錄**：`track-command.md`（測試路徑推導與 skill 測試套件互相引用）、`workflow-execute.md` / `workflow-query.md`（依系統模型設計的執行/查詢決策樹）。
+>
+> **溯源**：本檔於本專案匯入 commit `f375ae675` 時即已存在，此後累積增補模組清單與用語校準；「覆核測試指令」章節於 2026-09-07 由 `SKILL.md`〈執行方式〉節末逐字搬入檔尾；「安裝與執行方式」章節同日由 `SKILL.md`〈執行方式〉節下的〈全局安裝（推薦，shim 化）〉〈本地執行〉兩子節逐字搬入（可用 `git log --oneline -- references/architecture.md` 查證）。
+
+本檔章節：〈系統模型（設計自我描述，完整版）〉〈術語〉〈目錄結構〉〈共用模組設計〉〈自動化分析功能〉〈安裝與執行方式〉〈覆核測試指令（skill 自身測試套件）〉。
+
+## 系統模型（設計自我描述，完整版）
+
+> **設計文件例外**：本節為架構設計論證（issue tracker 類比、歷史事故回顧），不含執行者動作；依體例判準（手冊 vs 教材）列為刻意保留的教材節，不要求補充可執行動作。
+
+本系統的參照模型是 **issue tracker + CI runner**（batch job queue 為輔助類比），不是 OS process。三個與 OS process 直覺相反的預設（設計回顧確認：誤用 process 直覺是共享樹競態與身份回填缺口兩類歷史事故的共同根因）：
+
+1. **身份晚綁定**：ticket 建立時不知道執行者（submit 與 assign 分離）；身份在 claim 時以 `--as` 綁定，不是 fork 即繼承。
+2. **共享工作區**：agent 預設共享 working tree（thread 語意）而非 process 隔離；檔案變更型派發應優先採 feat branch / worktree 隔離。
+3. **type 與 instance 一對多**：agent 類型（能執行某類任務的角色，如「能做 IMP 的類型」）與執行體（實際在跑的 process）不是一對一，同一類型可同時 spawn 多個獨立執行體；「該類型只有一種」不等於「同時只能跑一個」。**反向風險**：誤讀為可無限開執行體同樣危險，真正的並行上限來自三項約束——共享 git index 的寫入競爭、主線程自身序列化的驗收與建票工作、單一執行體 context 隨任務數累積而飽和，而非類型數。
+
+**類比邊界**：上列 1、3 兩點借用 issue tracker 的 submit/assign 分離語意成立；2「共享工作區」是本系統相對 CI runner 慣例（預設每 job 獨立隔離環境）的反向自身選擇，不是套用 CI runner 的隔離模型——類比至此止步，不含工作區隔離語意，誤讀為「與 CI runner 一致」會與實際共享樹設計相反。
+
+scheduler 層類比同樣成立：runqueue／dashboard 對應 Linux `schedule()`／`top`。
+
+### named agent 生命週期三態
+
+> 來源：CHANGELOG.md v2.9.0 條目
+
+`agent = CI runner` 類比原僅二態（running → stopped），named agent（Agent tool 帶 name 參數 spawn）完工後不自動終止，實際存在第三態：
+
+| 狀態 | 含義 | 觸發 | 對應 CI runner 語意 |
+|------|------|------|---------------------|
+| running | agent 正在執行 ticket 工作 | Agent tool spawn / SendMessage 派發新任務 | job 執行中 |
+| idle | agent 完工無新任務，process 保持存活且可定址 | agent 完成回報後 CC runtime 發送 `idle_notification` | warm runner（跑完不銷，省下次冷啟動成本） |
+| stopped | agent process 終止 | SubagentStop（自然結束）/ `shutdown_request` approve / session 結束 | job 完成後 runner 回收 |
+
+idle 態不改變 agent = runner 的核心類比（身份仍在 claim 綁定、工作區仍為預設 2 的共享語意），只是擴展 runner 生命週期從「單 job 即銷」到「可選續用多 job」。PM 對 idle agent 的續用/放生判準與回收 SOP 見 `.claude/pm-rules/parallel-dispatch.md`「idle agent 回收 SOP」章節。
+
+> SKILL.md 入口僅留一行指標指向本節，不重複維護三預設內容——本節為完整論證，入口不重述。
+
+---
+
+## 術語
+
+multi-PM 協調層與票務自造詞的一次性定義；SKILL.md／track-command.md 等檔首次出現處指向本節，不重複展開。
+
+| 詞 | 定義 |
+|---|---|
+| lease | session 對一張 in_progress 票的持有期，由 registry heartbeat 判定 FRESH／STALE。 |
+| registry | 追蹤各 session 持有中票證的登記模組；模組載入失敗、非 git 環境或讀取降級時不可用（此時 [In Progress] 條目無 lease 標記）。 |
+| heartbeat | session 定期回報存活的心跳訊號，registry 依此判定 lease 是 FRESH 還是 STALE。 |
+| FRESH | lease 心跳在有效視窗內，判定 session 存活中。 |
+| STALE | lease 心跳超過有效視窗，判定 session 可能已死但未確認，須經 reclaim 鑑識三查才能回收。 |
+| SessionEnd | session 正常結束時釋放 lease 的事件（graceful release）；registry 對應 entry 隨之刪除。 |
+| 票面 | ticket md 檔案的內容本身（frontmatter 欄位、各章節文字）。 |
+| 落票 | 把資訊寫入票面的動作，如 `append-log`、`dispatch --note`。 |
+| 派發骨架 | `ticket track dispatch` 輸出的代理人 prompt 模板，供 PM 貼入 Agent 呼叫；欄位定義見 `agent-dispatch-template`。 |
+| 鑑識三查 | `track reclaim` 對疑似已死 session 持票的三項檢查（未合併分支／髒檔交集／缺 Exit Status），任一命中或無法判定即拒絕釋放。 |
+| 接手 | PM 或代理人取得一張票的工作權：pending 票首次認領為 claim；in_progress 票恢復處理為 resume（見 `SKILL.md`〈無子命令時的預設行為〉）。 |
+| 隔離索引 | `GIT_INDEX_FILE` 指向獨立臨時 git index 的提交配方，避免共用 index 的 TOCTOU 競爭；完整配方見 `.claude/references/bash-tool-usage-details.md`「規則七詳細」。 |
+| 世界平面 | filesystem／git／ticket 等外部可查證狀態的統稱，與「記錄平面」（transcript／對話記憶）相對；重大狀態轉換須以世界平面為準，見 `.claude/rules/core/tool-output-trust-rules.md` 規則 5。 |
 
 ## 目錄結構
 
 ```
 .claude/skills/ticket/
 ├── SKILL.md                    # 入口文件 - 統一入口
-├── ticket.md                   # 完整使用指南
 ├── pyproject.toml              # 套件定義（uv 管理）
 ├── ticket_system/              # 主套件目錄
 │   ├── __init__.py
-│   ├── lib/                    # 共用模組（67 個，依功能分組）
+│   ├── lib/                    # 共用模組（72 個，依功能分組）
 │   │   ├── __init__.py
 │   │   │
 │   │   ├── [Ticket 核心 I/O 與解析]
@@ -44,6 +103,8 @@
 │   │   ├── multi_view_status.py           # multi_view_status 欄位覆寫格式驗證
 │   │   ├── exempt_marker.py               # PC-093 exempt marker 格式驗證與生成
 │   │   ├── precondition.py                # Body-op precondition checks 
+│   │   ├── absence_assertion_detector.py  # 缺席斷言未查證提示模組（PC-BAL-053 承接）
+│   │   ├── ana_ticket_metadata_validator.py  # ANA Ticket metadata 品質驗證模組（PC-058）
 │   │   │
 │   │   ├── [任務鏈與排程]
 │   │   ├── chain_analyzer.py              # 任務鏈分析模組
@@ -59,6 +120,8 @@
 │   │   ├── tdd_sequence.py                # TDD 序列建議模組
 │   │   ├── dispatch_recommender.py        # Dispatch Recommender - Agent 派發建議演算法
 │   │   ├── dispatch_common.py             # 共用 dispatch-* CLI 前置處理
+│   │   ├── dispatch_skeleton.py           # Dispatch 骨架純組裝邏輯（供 CLI 與測試共用，抽離自 track_dispatch）
+│   │   ├── relatedto_index.py             # relatedTo 反向索引模組（單向儲存、消費端 1-hop symmetric union）
 │   │   │
 │   │   ├── [併發、身份與版控]
 │   │   ├── lease.py                       # Lease 生命週期管理（multi-PM 協調層 Phase 3：claim/complete/release/reclaim）
@@ -66,6 +129,7 @@
 │   │   ├── identity_guard.py              # 身份申報守衛（identity guard）— --as 旗標與 ticket who.current 對照
 │   │   ├── registry_loader.py             # Registry Loader - 共用的 registry 載入函式
 │   │   ├── git_utils.py                   # md auto-commit 薄封裝
+│   │   ├── git_ops.py                     # 共用隔離索引提交（commit_files_isolated，供 auto-commit hook 與 lifecycle.complete() 共用）
 │   │   │
 │   │   ├── [Handoff、worklog 與 checkpoint]
 │   │   ├── handoff_utils.py               # Handoff 共用判斷函式模組
@@ -98,8 +162,8 @@
 │   │   ├── version.py                     # 版本管理模組
 │   │   ├── audit_version.py               # 版本審計模組
 │   │   └── ambiguous_prefix.py            # 共用的 argparse 縮寫歧義攔截 helper
-│   ├── commands/               # 子命令實作（48 個；各命令的用法與語意見 SKILL.md）
-│   │   ├── __init__.py         # 匯出六大子命令
+│   ├── commands/               # 子命令實作（52 個；各命令的用法與語意見 SKILL.md）
+│   │   ├── __init__.py         # 註冊 8 個頂層子命令（create/track/handoff/resume/migrate/generate/batch-create/show）；version-shift 另於 `ticket_system/scripts/ticket.py:150` 直接註冊
 │   │   │
 │   │   ├── [頂層命令]
 │   │   ├── create.py                      # create 命令模組
@@ -125,6 +189,8 @@
 │   │   ├── track_batch.py                 # 批量操作模組
 │   │   ├── track_acceptance.py            # 驗收條件和執行日誌模組
 │   │   ├── track_set_acceptance.py        # ticket track set-acceptance 子命令
+│   │   ├── track_set_closed_by.py         # ticket track set-closed-by 子命令（closed 票 closed_by 欄位修正路徑）
+│   │   ├── track_commit.py                # ticket track commit 子命令（隔離索引提交 where.files 子集，取代裸 git add+commit）
 │   │   ├── track_audit.py                 # audit 子命令實作
 │   │   ├── track_validate.py              # ticket track validate 子命令
 │   │   ├── track_board.py                 # 看板命令模組
@@ -149,6 +215,8 @@
 │   │   ├── track_handoff_ready.py         # ticket track handoff-ready 命令
 │   │   ├── track_checkpoint_status.py     # ticket track checkpoint-status 命令
 │   │   ├── track_hook_health.py           # ticket track hook-health 命令
+│   │   ├── track_hook_liveness.py         # ticket track hook-liveness 命令（查 `.claude/hook-logs/_liveness/*.jsonl` 觸發記錄）
+│   │   ├── track_dispatch.py              # ticket track dispatch 子命令（派發即落票：--note 落票派發日誌 + 輸出骨架 prompt）
 │   │   │
 │   │   ├── [multi-PM 協調層]
 │   │   ├── track_sessions.py              # ticket track sessions 命令
@@ -231,6 +299,105 @@ lib/ 共用的標準化訊息定義，遵循 DRY 原則。
 | `format_info(template, **kwargs)`    | 格式化資訊訊息                   |
 | `print_not_executable_and_exit()`    | 統一的 `__main__` guard 訊息輸出 |
 
+#### 統一錯誤訊息格式
+
+`format_error()` 支援雙路徑：Legacy（向後相容）與結構化 Envelope（推薦給新呼叫）。
+
+**Legacy 路徑（向後相容）**：
+
+```python
+from ticket_system.lib.messages import ErrorMessages, format_error
+
+format_error(ErrorMessages.TICKET_NOT_FOUND, ticket_id="0.31.0-W4-001")
+# => "[Error] 找不到 Ticket 0.31.0-W4-001"
+```
+
+**結構化 Envelope 路徑（推薦給新呼叫）**：
+
+```python
+from ticket_system.lib.messages import ErrorEnvelope, format_error
+
+env = ErrorEnvelope(
+    component="track",         # CLI 子命令或模組名
+    action="claim",            # 操作動詞
+    errno="TICKET_NOT_FOUND",  # 錯誤分類代號
+    hint="ticket track list",  # 修復建議（可選）
+)
+print(format_error(env))
+```
+
+輸出：
+
+```text
+[Error] __error_envelope_v1__
+  component: track
+  action: claim
+  errno: TICKET_NOT_FOUND
+  hint: ticket track list
+```
+
+**版本標記 `__error_envelope_v1__`**：Hook 偵測到此標記即視為已套用統一格式，跳過重複補充。grep 可用：
+
+```bash
+grep -n "__error_envelope_v1__" .claude/skills/ticket/ticket_system/
+```
+
+**Hook 端跳過機制**（`.claude/skills/ticket/hooks/cli-error-feedback-hook.py`）：Hook 在 PostToolUse 攔截 `ticket track` 系列命令的 stderr/stdout，若偵測到 `__error_envelope_v1__` 標記即直接放行，不再附加中文修復引導，避免「argparse 英文 + Hook 中文 markdown」雙軌訊息互相重疊：
+
+```python
+# .claude/skills/ticket/hooks/cli-error-feedback-hook.py（節錄；
+# 原 skill-cli-error-feedback-hook.py 已於 0.0.1-W1-005 合併刪除）
+ENVELOPE_VERSION_MARKER = "__error_envelope_v1__"
+
+def is_envelope_output(stderr: str, stdout: str) -> bool:
+    return ENVELOPE_VERSION_MARKER in (stderr or "") or ENVELOPE_VERSION_MARKER in (stdout or "")
+
+# check_skill_cli_error() 內：
+if is_envelope_output(stderr, stdout):
+    return None  # 已是結構化訊息，跳過 hook 補充
+```
+
+輸出形態 → hook 行為對映：
+
+| 命令輸出 | hook 行為 |
+|---------|----------|
+| 含 `__error_envelope_v1__`（業務錯誤經 `format_error(ErrorEnvelope)`） | 跳過補充；用戶看到單一結構化訊息 |
+| 不含標記（純語法錯誤、legacy str 路徑、未遷移命令） | 補充中文修復建議（保留既有引導體驗） |
+
+#### CLI 錯誤分類
+
+`ticket track` 系列命令的 argparse 錯誤分為兩類，由 `ArgparseFormatErrorParser`（本檔）分流：
+
+| 錯誤類別 | 範例 | 輸出路徑 | exit code |
+|---------|------|---------|----------|
+| **業務錯誤** | `invalid choice` / `invalid <type> value` | `format_error(ErrorEnvelope)` 結構化（含版本標記） | 2 |
+| **純語法錯誤** | `unrecognized arguments` / `the following arguments are required` | argparse 預設 POSIX 風格 | 2 |
+
+**訊息形態 → 處置對映**：輸出含 `__error_envelope_v1__` → 檢查子命令名／參數型別；輸出以 `usage:` 起頭 → 檢查必填參數與拼字。
+
+業務錯誤範例：
+
+```bash
+$ ticket track nonexistent_op
+[Error] __error_envelope_v1__
+  component: ticket track
+  action: parse_args
+  errno: INVALID_CHOICE
+  hint: argument operation: invalid choice: 'nonexistent_op' (...)
+```
+
+純語法錯誤範例：
+
+```bash
+$ ticket track claim
+usage: ticket track claim [-h] ... ticket_id
+ticket track claim: error: the following arguments are required: ticket_id
+```
+
+**設計理由**（依據，非動作）：業務錯誤反映呼叫端對 CLI 語意的誤解（選錯子命令、傳錯型別），結構化輸出便於 hook 與後續工具偵測；純語法錯誤屬 argparse 通用範疇，保留預設 usage 提示對熟悉 POSIX CLI 的使用者更友善。
+
+**不在本機制範圍**：業務邏輯錯誤（如 ticket id 不存在）由各 command 自行用 `format_error` 產出，不經 argparse 路徑；`commands/create.py` argparse 客製與 hook 補充邏輯另有專屬處理路徑，不歸本節。
+
 ### command_lifecycle_messages.py
 
 commands/ 生命週期管理訊息常數。統一管理 handoff.py、lifecycle.py、resume.py、create.py、fields.py 的硬編碼訊息。
@@ -267,6 +434,16 @@ commands/ 追蹤操作訊息常數。統一管理 track 系列、migrate.py、ge
 | -------------------- | ------------------------ |
 | 分析任務鏈的關鍵路徑 | 識別阻塞任務和最長依賴鏈 |
 
+### cycle_detector.py
+
+循環依賴檢測模組（W7 新增）。以 `blockedBy` 依賴關係構建有向圖，DFS 演算法偵測環（時間複雜度 O(V+E)，V 為 Ticket 數、E 為依賴數），供 `validate_blocked_by` 在設定/更新 `blockedBy` 時攔截循環。`blockedBy` 讀取支援清單格式與逗號分隔字串兩種寫法（見 `ticket_validator.py` 標準化邏輯）。
+
+| 函式                       | 用途                                       |
+| -------------------------- | ------------------------------------------ |
+| `CycleDetector.has_cycle()` | 檢測單一 Ticket 起點的依賴圖是否有環，回傳 `(bool, cycle_path)` |
+| `CycleDetector.detect_cycles_in_all_tickets()` | 掃描全部 Ticket 找出所有環 |
+| `CycleDetector.validate_blocked_by()` | 驗證新增/更新的 `blockedBy` 是否會產生循環 |
+
 ### ticket_chain_index.py
 
 任務鏈索引模組（W7 新增）。
@@ -296,27 +473,32 @@ Wave 計算邏輯模組（W7 新增）。
 
 ### constants.py
 
-共用常數定義。
+共用常數定義。canonical location 為 `ticket_system/constants.py`；`ticket_system/lib/constants.py` 為向後相容 shim（`from ticket_system.constants import *`），skill 內部與 hook 皆可用，理由見該檔 docstring（避免 hook 在無 yaml 系統 Python 環境下經 `lib/__init__.py` eager-import 觸發 `ModuleNotFoundError`）。
 
 ```python
-# 狀態常數
+# 狀態常數（ticket_system/constants.py:125-130）
 STATUS_PENDING = "pending"
 STATUS_IN_PROGRESS = "in_progress"
 STATUS_COMPLETED = "completed"
 STATUS_BLOCKED = "blocked"
+STATUS_SUPERSEDED = "superseded"
+STATUS_CLOSED = "closed"
 
-# 類型常數
-TYPE_IMP = "IMP"
-TYPE_TST = "TST"
-TYPE_ADJ = "ADJ"
-# ...
+# 類型常數：正典 4 型為 dict，非個別 TYPE_* 常數（:279-284）
+TICKET_TYPES = {
+    "IMP": "Implementation (實作)",
+    "ADJ": "Adjustment (調整/修復)",
+    "ANA": "Analysis (分析)",
+    "DOC": "Documentation (文件)",
+}
+# 歷史化石容忍集：讀取/審計接受、寫入拒絕（:288）
+LEGACY_TICKET_TYPES = frozenset({"TST", "RES", "INV"})
 
-# 路徑常數
-TICKETS_BASE_PATH = "docs/work-logs"
-HANDOFF_PATH = ".claude/handoff/pending"
+# 路徑常數（:264）；無獨立 HANDOFF_PATH 常數，pending 目錄由 handoff_utils 動態組出
+WORK_LOGS_DIR = "docs/work-logs"
 
-# 正則表達式
-TICKET_ID_PATTERN = r"^(\d+\.\d+\.\d+)-W(\d+)-(\d+(?:\.\d+)*)$"
+# 正則表達式（:204，尾段含可選 slug 段）
+TICKET_ID_PATTERN = r"^(\d+\.\d+\.\d+)-W(\d+)-(\d+(?:\.\d+)*)(-[a-z0-9][a-z0-9-]{0,59})?$"
 ```
 
 ## 自動化分析功能
@@ -397,3 +579,41 @@ TICKET_ID_PATTERN = r"^(\d+\.\d+\.\d+)-W(\d+)-(\d+(?:\.\d+)*)$"
 ```
 [ERROR] 無法進入 Phase 3b（實作執行），尚需完成：Phase 3a（策略規劃）
 ```
+
+## 安裝與執行方式
+
+> **禁止直接執行 Python 檔案。** `ticket_system` 是 Python 套件，必須透過 `pyproject.toml` 定義的入口點執行。
+
+### 全局安裝（推薦，shim 化）
+
+`ticket` CLI 透過 cwd-resolving shim 安裝（非 `uv tool install`，ARCH-APP-002 / framework issue #12）：shim 依當前 cwd 所在專案的 git toplevel 解析 `.claude/skills/ticket` 源碼並 `uv run`，源碼修改後**無需重新安裝**、改動即時生效，多專案共用同名 skill 不碰撞。`uv-tool-staleness-check-hook` / `ticket-reinstall-hook` 兩 hook 仍註冊於 `.claude/settings.json`，非「已取代」：`ticket-reinstall-hook.py` 偵測到已 shim 化即略過；`uv-tool-staleness-check-hook.py` 無 shim 分支，兩者保留註冊為舊 `uv tool install` 路徑的殘留防護。
+
+```bash
+# 安裝 / 更新 shim（一次安裝 ticket / doc / worktree 三個 shim）
+python3 .claude/scripts/install-skill-clis.py
+
+# 檢查是否已 shim 化（exit 0/1）
+python3 .claude/scripts/install-skill-clis.py --check
+
+# 之後在任何目錄執行
+ticket track summary
+ticket track claim <id>
+```
+
+### 本地執行
+
+```bash
+(cd .claude/skills/ticket && uv run ticket track summary)
+```
+
+## 覆核測試指令（skill 自身測試套件）
+
+> **唯一標準指令**：裸 `pytest`，不帶任何路徑參數。`pyproject.toml` 的 `[tool.pytest.ini_options]` 已設定 `testpaths = ["tests", "ticket_system/tests"]`，一次 pytest session 涵蓋 skill 根層 `tests/` 與 `ticket_system/tests/` 兩個目錄，無需（也不應）分開執行。
+
+```bash
+(cd .claude/skills/ticket && uv run --with pytest --with pyyaml --with filelock python -m pytest -q)
+```
+
+**禁止**：以顯式路徑（如 `pytest tests/`、`pytest ticket_system/tests`）作為覆核依據。顯式路徑參數會**覆蓋** `testpaths` 設定，僅收集單一目錄下的測試，另一目錄的測試會被靜默漏跑而不觸發任何錯誤或警告——覆核者若只跑其中一個目錄卻在 Test Results 宣稱「測試通過率 100%」，該宣稱在結構上未涵蓋另一半測試。
+
+`ticket_system/tests/` 與 `tests/` 兩目錄並存的分裂現況、路徑推導細節見 `references/track-command.md`「Python 測試路徑推導」小節。

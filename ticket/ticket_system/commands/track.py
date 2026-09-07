@@ -352,12 +352,56 @@ def _execute_release(args: argparse.Namespace, version: str) -> int:
     return rc
 
 
+def _reclaim_landing_report_hook(version: str, ticket_id: str, report_text: str, now) -> None:
+    """`reclaim --confirm` 落地成功後，把鑑識報告 append 進票面 Solution
+    章節，使事後可對帳（3-F 共用原則：前置檢查衡量的是可寫 artifact，
+    鑑識結果原僅印在終端機不落票，`--confirm` 決策無法回溯稽核）。
+
+    `lib/lease.py` 刻意不 import `ticket_system.commands.*`（層級邊界，
+    見該模組檔頭說明），故落票所需的 `execute_append_log` 由本函式（
+    commands 層）以 `landing_report_hook` 注入 `reclaim_ticket`，非
+    `lease.py` 直接呼叫。
+
+    `force=True`：reclaim 完成後票已轉 pending，append-log 的
+    in_progress precondition 對此類系統落地屬合法逃生閥使用（落地本身
+    是 reclaim 流程的一部分，非使用者身份或驗收檢查的旁路）。
+    """
+    import sys
+
+    from ticket_system.commands.track_acceptance import execute_append_log
+
+    timestamp = now.strftime("%Y-%m-%d %H:%M UTC")
+    content = f"### Reclaim 落地鑑識報告（{timestamp}）\n\n{report_text}"
+    append_args = argparse.Namespace(
+        ticket_id=ticket_id,
+        section="Solution",
+        content=content,
+        version=version,
+        force=True,
+        replace=False,
+    )
+    result = execute_append_log(append_args, version)
+    if result != 0:
+        sys.stderr.write(
+            f"[reclaim] {ticket_id}: 鑑識報告落票失敗（append-log exit {result}），"
+            "reclaim 狀態轉換已完成，僅稽核記錄缺失\n"
+        )
+
+
 def _execute_reclaim(args: argparse.Namespace, version: str) -> int:
     """`ticket track reclaim`：僅接受 reclaimable 票，強制 ghost 鑑識三查，
     預設 dry-run；`--confirm` 且三查全過才轉回 pending 並清 registry lease
     （multi-PM 協調層 Phase 3，包裝 `ticket_system.lib.lease.reclaim_ticket`）。
+
+    `--confirm` 落地成功後，經 `landing_report_hook` 把鑑識報告 append 進
+    票面 Solution 章節（見 `_reclaim_landing_report_hook`）。
     """
-    return reclaim_ticket(version, args.ticket_id, confirm=bool(getattr(args, "confirm", False)))
+    return reclaim_ticket(
+        version,
+        args.ticket_id,
+        confirm=bool(getattr(args, "confirm", False)),
+        landing_report_hook=_reclaim_landing_report_hook,
+    )
 
 
 def _execute_verify(args: argparse.Namespace, version: str) -> int:
@@ -1424,6 +1468,12 @@ def _register_acceptance_commands(
     p_set_exit_status.add_argument(
         "--force", action="store_true", default=False,
         help="W3-044 逃生閥：旁路 status precondition 檢查（記入 hook-logs）",
+    )
+    p_set_exit_status.add_argument(
+        "--as",
+        dest="as_agent",
+        default=None,
+        help="申報執行身份，與 who.current 比對（未提供時 warn-only，不符則 deny）",
     )
 
     # set-completion-info 操作（1.5.0-W5-021：CLI 生成 Completion Info 區塊）

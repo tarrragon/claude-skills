@@ -6,6 +6,11 @@
 3. single: 1 個活躍 → exit 1 + [WARN] + 1 筆列表
 4. multiple: 3 個活躍 → exit 1 + [WARN] + 3 筆列表
 5. malformed_json: JSON 毀損 → exit 2 + stderr [FAIL]
+
+新鮮度維度（0.2.1-W3-1323，3-H 個案 1／2）：判定原只收「dispatches 是否
+為空」，PM 依 WARN 後無從分辨活躍派發是剛發出還是已逾時遺留。新增每筆
+記錄年齡標註（逾 60 分鐘標 [STALE]，沿用 track_dashboard 同一新鮮度慣例）
+與彙總計數。
 """
 
 from __future__ import annotations
@@ -124,3 +129,50 @@ class TestDispatchCheck:
         rc, out, err = _run(tmp_path, monkeypatch)
         assert rc == 2
         assert "[FAIL]" in err
+
+
+class TestFreshnessDimension:
+    """0.2.1-W3-1323（3-H 個案 1／2）：dispatch-check 補新鮮度維度。"""
+
+    def test_recent_dispatch_not_marked_stale(self, tmp_path, monkeypatch):
+        """剛派發（< 60 分鐘）不標 [STALE]。"""
+        from datetime import datetime, timedelta, timezone
+
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        _write_dispatch_file(tmp_path, {
+            "dispatches": [
+                {"agent_description": "fresh-agent", "ticket_id": "A", "dispatched_at": recent},
+            ],
+        })
+        rc, out, err = _run(tmp_path, monkeypatch)
+        assert rc == 1
+        assert "[STALE" not in out
+
+    def test_old_dispatch_marked_stale_with_summary_count(self, tmp_path, monkeypatch):
+        """逾 60 分鐘的活躍記錄標 [STALE] 並在彙總行給出計數與下一步建議。"""
+        from datetime import datetime, timedelta, timezone
+
+        old = (datetime.now(timezone.utc) - timedelta(minutes=90)).isoformat()
+        _write_dispatch_file(tmp_path, {
+            "dispatches": [
+                {"agent_description": "stale-agent", "ticket_id": "A", "dispatched_at": old},
+            ],
+        })
+        rc, out, err = _run(tmp_path, monkeypatch)
+        assert rc == 1
+        assert "[STALE" in out
+        assert "其中 1 筆" in out
+        assert "track sessions" in out
+
+    def test_malformed_dispatched_at_not_marked_stale(self, tmp_path, monkeypatch):
+        """dispatched_at 缺失或格式錯誤時不猜測，不標 [STALE]（回歸：
+        既有測試以 "t1"/"t2"/"t3" 等非 ISO 字面值仍需維持綠燈）。"""
+        _write_dispatch_file(tmp_path, {
+            "dispatches": [
+                {"agent_description": "malformed-ts", "ticket_id": "A", "dispatched_at": "not-a-timestamp"},
+                {"agent_description": "missing-ts", "ticket_id": "B"},
+            ],
+        })
+        rc, out, err = _run(tmp_path, monkeypatch)
+        assert rc == 1
+        assert "[STALE" not in out

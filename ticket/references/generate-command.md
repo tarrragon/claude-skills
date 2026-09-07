@@ -2,6 +2,12 @@
 
 從 Plan 檔案自動生成 Atomic Tickets（Plan-to-Ticket 轉換）。
 
+> **何時讀**：手上有 Plan 檔案要批次轉成 Atomic Ticket，需要確認 `/ticket generate` 用法、參數說明（`--version`/`--wave`/`--dry-run`）或 Plan-to-Ticket 轉換流程（任務識別、type 分類、TDD Phase 順序映射、依賴關係識別）時查閱。**亦由此進入**：無（grep 零命中）。
+>
+> **同目錄**：`create-command.md`（生成結果遵循相同的 type 分類規則，兩者常對照查閱）、`ticket-lifecycle-details.md`（生成結果需符合的 Ticket 建立格式範本）。
+>
+> **溯源**：匯入時已存在，無拆分點。
+
 ## 用法
 
 ```bash
@@ -12,7 +18,7 @@
 /ticket generate <plan_file> --version <version> --wave <wave> --dry-run
 ```
 
-## 參數說明
+## Flag 說明
 
 | 參數        | 說明                           | 必填 |
 | ----------- | ------------------------------ | ---- |
