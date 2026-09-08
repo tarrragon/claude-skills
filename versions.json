@@ -64,7 +64,8 @@
     "version": "1.0.0"
   },
   "dart-domain-modeling": {
-    "hash": "fe46a6d7f982ad28dd42521b07f61d2fecaa604cbce55fe1b7aa1c1dfd884a42"
+    "hash": "43a7ec2f3d6150ad0e92428ff41e282d55328afed715e1ab18d4b06389f73ac3",
+    "version": "1.0.0"
   },
   "dart-provider-architecture": {
     "hash": "36defc8bebcac82b26a73f08aa4f8da5a401aad17cc8af8a986f20bfa07a40d9",
