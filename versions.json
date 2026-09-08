@@ -1,273 +1,207 @@
 {
   "5w1h-decision": {
-    "hash": "e69c6ae52b41f6c32976379cf7786b6beb76890a1f1ec16b08a1eb55add8fbb1",
-    "version": "1.3.2"
+    "hash": "e69c6ae52b41f6c32976379cf7786b6beb76890a1f1ec16b08a1eb55add8fbb1"
   },
   "agent-team": {
-    "hash": "a19ed0b4aa24f4341fe855289547cef7df1d99b4ef67c20fe98ac6656e09724d",
-    "version": "1.2.0"
+    "hash": "a19ed0b4aa24f4341fe855289547cef7df1d99b4ef67c20fe98ac6656e09724d"
   },
   "branch-worktree-guardian": {
-    "hash": "d8d92a92af65101929892d27305627fc83181a0e5f4ff67748f56cf2daeccca6",
-    "version": "1.0.0"
+    "hash": "d8d92a92af65101929892d27305627fc83181a0e5f4ff67748f56cf2daeccca6"
   },
   "broken-link-check": {
-    "hash": "3532e4db0b20ef41f2288921fa90f1d0c5bb11f321048e788e9e0b7f6da832c1",
-    "version": "2.3.0"
+    "hash": "3532e4db0b20ef41f2288921fa90f1d0c5bb11f321048e788e9e0b7f6da832c1"
   },
   "bulk-evaluate": {
-    "hash": "812dcd6f5c6c2919276cfa376f36ccd2103b1739f526a9a464da2c552dd6ae94",
-    "version": "1.0.0"
+    "hash": "812dcd6f5c6c2919276cfa376f36ccd2103b1739f526a9a464da2c552dd6ae94"
   },
   "business-analysis": {
-    "hash": "d7e82f6585a220f7d316f4f68c6ec6e7bc608020f16db940a59186a008880084",
-    "version": "1.4.1"
+    "hash": "d7e82f6585a220f7d316f4f68c6ec6e7bc608020f16db940a59186a008880084"
   },
   "business-research": {
-    "hash": "330cf65e026557dec271cf4d0b66f1c1ab0aad5715d6904f6d9fc6d759dc8d64",
-    "version": "1.9.1"
+    "hash": "330cf65e026557dec271cf4d0b66f1c1ab0aad5715d6904f6d9fc6d759dc8d64"
   },
   "case-first-module-workflow": {
-    "hash": "f3ee518e237f13eee070afae9717b1399b61133dd5282318ba55650e2a65d893",
-    "version": "1.7.2"
+    "hash": "f3ee518e237f13eee070afae9717b1399b61133dd5282318ba55650e2a65d893"
   },
   "cc-release-impact-review": {
-    "hash": "84d7ec3c59fbccfd5869f9465879ba358f91287a486bff6f2881d9d97bde5caa",
-    "version": "1.0.0"
+    "hash": "84d7ec3c59fbccfd5869f9465879ba358f91287a486bff6f2881d9d97bde5caa"
   },
   "chrome-extension-mcp-debug": {
-    "hash": "e540d6753db9ea62a43c56a623caf105b469ff1553b7c0ee80bc5ef6d0eff361",
-    "version": "1.1.0"
+    "hash": "e540d6753db9ea62a43c56a623caf105b469ff1553b7c0ee80bc5ef6d0eff361"
   },
   "cognitive-load-assessment": {
-    "hash": "1f3b8a2112492e795571e930e3bd9e4a800e49acd43bd55c72b0d81224c2adbb",
-    "version": "2.0.0"
+    "hash": "1f3b8a2112492e795571e930e3bd9e4a800e49acd43bd55c72b0d81224c2adbb"
   },
   "component-contract-design": {
-    "hash": "3d40599358405fcecb4c59c18b8fa601a4d8f858b335b971f0ed52c73b75a3c0",
-    "version": "1.8.0"
+    "hash": "3d40599358405fcecb4c59c18b8fa601a4d8f858b335b971f0ed52c73b75a3c0"
   },
   "compositional-writing": {
-    "hash": "d18a42b07d0780f6d66b88b7941bf6df008e8e687f5b9c7708f73e250d3eab47",
-    "version": "1.7.2"
+    "hash": "4b0926cb2929aa4aed67a41e785cc90b62bb6896b6006dc2f8693a73160ee740"
   },
   "content-extension-evaluation": {
-    "hash": "0f472c43981ce1194578d01ded96a44b7da872512c490bfc405858d465934a49",
-    "version": "1.1.2"
+    "hash": "0f472c43981ce1194578d01ded96a44b7da872512c490bfc405858d465934a49"
   },
   "continuous-learning": {
-    "hash": "8debdd8c9b43eba29c48c1a37ddcba07cd6b96323425e97b749ea478d5778c5c",
-    "version": "4.1.0"
+    "hash": "8debdd8c9b43eba29c48c1a37ddcba07cd6b96323425e97b749ea478d5778c5c"
   },
   "dart-comment-traceability": {
-    "hash": "0da4550f47cd531f22e48b2a979ecf43e5e4ab3c8b244d0e18cfa121afa60ee1",
-    "version": "1.0.0"
+    "hash": "0da4550f47cd531f22e48b2a979ecf43e5e4ab3c8b244d0e18cfa121afa60ee1"
   },
   "dart-domain-modeling": {
     "hash": "fe46a6d7f982ad28dd42521b07f61d2fecaa604cbce55fe1b7aa1c1dfd884a42"
   },
   "dart-provider-architecture": {
-    "hash": "36defc8bebcac82b26a73f08aa4f8da5a401aad17cc8af8a986f20bfa07a40d9",
-    "version": "2.0.0"
+    "hash": "36defc8bebcac82b26a73f08aa4f8da5a401aad17cc8af8a986f20bfa07a40d9"
   },
   "dart-style-guardian": {
-    "hash": "f9ef60528678817c8156ba09b17fcc79e98ca9c61bcfe0be1a3cc5e8294a32bd",
-    "version": "1.0.0"
+    "hash": "f9ef60528678817c8156ba09b17fcc79e98ca9c61bcfe0be1a3cc5e8294a32bd"
   },
   "dart-test-async-guardian": {
-    "hash": "de1a7df53a7345bfb8195d26104a1f6b8dcdb8930bd6eb77761d45624a86fcbd",
-    "version": "1.0.0"
+    "hash": "de1a7df53a7345bfb8195d26104a1f6b8dcdb8930bd6eb77761d45624a86fcbd"
   },
   "data-extraction": {
-    "hash": "264e0cf4140200f34941efd2f82c9c4534deaf99ff3504d8cd1ca37e81b0559a",
-    "version": "1.0.0"
+    "hash": "264e0cf4140200f34941efd2f82c9c4534deaf99ff3504d8cd1ca37e81b0559a"
   },
   "decision-tree-helper": {
-    "hash": "79516c6dc1a55098597bfe9705aa535963999d9a0eea049766af4292d1524303",
-    "version": "2.0.0"
+    "hash": "79516c6dc1a55098597bfe9705aa535963999d9a0eea049766af4292d1524303"
   },
   "design-decision-framework": {
-    "hash": "89cfc2d8cde3d98fcf7d794ae0547cd6eb0dcd4bdf81834357952db537ab3fd4",
-    "version": "1.3.0"
+    "hash": "89cfc2d8cde3d98fcf7d794ae0547cd6eb0dcd4bdf81834357952db537ab3fd4"
   },
   "dispatch-strategy-review": {
-    "hash": "b37c989e22bdaa41e1b5ebe501c7a1b1088a0306ff49019863cb0c8dc81a77e8",
-    "version": "1.1.0"
+    "hash": "b37c989e22bdaa41e1b5ebe501c7a1b1088a0306ff49019863cb0c8dc81a77e8"
   },
   "doc": {
-    "hash": "cff4831d085bba9e4fbcc01b307a18f4a26403b71ad9e34d09f08cefe3630561",
-    "version": "1.12.1"
+    "hash": "cff4831d085bba9e4fbcc01b307a18f4a26403b71ad9e34d09f08cefe3630561"
   },
   "doc-flow": {
-    "hash": "c86281d19c81d23b599fb3f51cd298b204ca10f2b2a6819a47c22524176be17f",
-    "version": "1.1.0"
+    "hash": "c86281d19c81d23b599fb3f51cd298b204ca10f2b2a6819a47c22524176be17f"
   },
   "error-pattern": {
-    "hash": "36879f3a4afc49d6c304341bb41f749a8722c2033c163fc73d783bc111fc6184",
-    "version": "1.6.0"
+    "hash": "36879f3a4afc49d6c304341bb41f749a8722c2033c163fc73d783bc111fc6184"
   },
   "evidence-driven-bugfix": {
-    "hash": "1e92106d817c5d77a64e12d163c6bddc2b6d0d1fe5608fbb2f000841b481adc2",
-    "version": "2.2.0"
+    "hash": "1e92106d817c5d77a64e12d163c6bddc2b6d0d1fe5608fbb2f000841b481adc2"
   },
   "foundation-design": {
-    "hash": "a3a6aa87f6302e31569d29f2d0369c9b445f62666ce140db55d379d650555761",
-    "version": "6.2.0"
+    "hash": "a3a6aa87f6302e31569d29f2d0369c9b445f62666ce140db55d379d650555761"
   },
   "framework-issue": {
-    "hash": "82df4f752563b25e4ed0f1fa7f754cb4e83545a1fe3cfcb8383aacf1520b3e09",
-    "version": "2.1.0"
+    "hash": "82df4f752563b25e4ed0f1fa7f754cb4e83545a1fe3cfcb8383aacf1520b3e09"
   },
   "frontend-with-playwright": {
-    "hash": "f1c7bd48f304b5d44bb0750c328585f97ca6cca485d1a389bd3707516d810d4d",
-    "version": "0.3.3"
+    "hash": "f1c7bd48f304b5d44bb0750c328585f97ca6cca485d1a389bd3707516d810d4d"
   },
   "golden-path-validation": {
-    "hash": "032b43c32461cbf08fbc2def134b39f50a8243b1b9edd2c58b28d42fc522f633",
-    "version": "1.3.2"
+    "hash": "032b43c32461cbf08fbc2def134b39f50a8243b1b9edd2c58b28d42fc522f633"
   },
   "impeccable": {
     "hash": "4dc058a1ec18d3671b979510db0b89ca272a87c965c892fed5370ad4b26b426a",
     "version": "3.5.0"
   },
   "knowledge-cards": {
-    "hash": "227031f099590f1b9dcaa0e820e0e4ff619e70d861440b8ca33e8e6de3570efb",
-    "version": "1.7.2"
+    "hash": "227031f099590f1b9dcaa0e820e0e4ff619e70d861440b8ca33e8e6de3570efb"
   },
   "linux-install-debug": {
-    "hash": "892016840634d6f2689a572dbfd197650241e65e8e40dd7e89b9a03f519c7bf7",
-    "version": "1.17.2"
+    "hash": "892016840634d6f2689a572dbfd197650241e65e8e40dd7e89b9a03f519c7bf7"
   },
   "lsp-first": {
-    "hash": "a6873cb50d09a409c103bba6da54a69d66a4b6e414c4bbddb388d8df7cc331ae",
-    "version": "1.0.0"
+    "hash": "a6873cb50d09a409c103bba6da54a69d66a4b6e414c4bbddb388d8df7cc331ae"
   },
   "mermaid-ascii": {
-    "hash": "e4037d2c9a5d96762f8c45c1dc76ed57e9131b790c07f886cacf6787bcd17e76",
-    "version": "1.0.0"
+    "hash": "e4037d2c9a5d96762f8c45c1dc76ed57e9131b790c07f886cacf6787bcd17e76"
   },
   "methodology-writing": {
-    "hash": "3030f31d3fe5a8ca08979f8af3522d2761d8a04f4e04d1ae9f6c483a35e1eaf5",
-    "version": "1.0.0"
+    "hash": "3030f31d3fe5a8ca08979f8af3522d2761d8a04f4e04d1ae9f6c483a35e1eaf5"
   },
   "migration-playbook-methodology": {
-    "hash": "a9a7a86672b1b17cd2b30400e79c411087af8238ec81d9f564436dd7d7d3f761",
-    "version": "1.0.1"
+    "hash": "a9a7a86672b1b17cd2b30400e79c411087af8238ec81d9f564436dd7d7d3f761"
   },
   "multi-round-review": {
-    "hash": "e63a8048a5cf8e372e52807823b937554250fc952a39d80bed81bd9da85e21a6",
-    "version": "2.2.2"
+    "hash": "e63a8048a5cf8e372e52807823b937554250fc952a39d80bed81bd9da85e21a6"
   },
   "neurodivergent-output": {
-    "hash": "2505349c2529f873bc5098c32e7af572faffaaa62e1699e0d0c26f6948951982",
-    "version": "1.10.0"
+    "hash": "2505349c2529f873bc5098c32e7af572faffaaa62e1699e0d0c26f6948951982"
   },
   "parallel-evaluation": {
-    "hash": "35d80b7e1b7a3b227a1e6608ef140e0ba37cdd61ae08174f85884fdf9f693c57",
-    "version": "1.3.0"
+    "hash": "35d80b7e1b7a3b227a1e6608ef140e0ba37cdd61ae08174f85884fdf9f693c57"
   },
   "pre-fix-eval": {
-    "hash": "0fdf30e803e400bca524f7ce2aa594f3080421d261f1375d73abf3dba1fb0f81",
-    "version": "1.0.0"
+    "hash": "0fdf30e803e400bca524f7ce2aa594f3080421d261f1375d73abf3dba1fb0f81"
   },
   "project-init": {
-    "hash": "3a354ddd86db0b190bf92f27b37e2dad1aad70c9f96bc9f65718a2d51e1023a0",
-    "version": "1.1.0"
+    "hash": "3a354ddd86db0b190bf92f27b37e2dad1aad70c9f96bc9f65718a2d51e1023a0"
   },
   "requirement-protocol": {
-    "hash": "e704a942289f146effce01971dfa1c74e1a0cb29ec8c2043b72bdc02f726270a",
-    "version": "0.8.4"
+    "hash": "e704a942289f146effce01971dfa1c74e1a0cb29ec8c2043b72bdc02f726270a"
   },
   "saas-tech-selection": {
-    "hash": "6b67038141767e8cb08124b6726079194ccc919aec28927f8e3d616ffcc0ce10",
-    "version": "1.2.3"
+    "hash": "6b67038141767e8cb08124b6726079194ccc919aec28927f8e3d616ffcc0ce10"
   },
   "scope-confirmation": {
-    "hash": "2971d1c228e3d585f914c1b2f10b0bea29499bdb11ce21b43eaff313f64b0926",
-    "version": "1.1.0"
+    "hash": "2971d1c228e3d585f914c1b2f10b0bea29499bdb11ce21b43eaff313f64b0926"
   },
   "search-tools-guide": {
-    "hash": "993376392672b38d83e8edca290ef3183c850a4595c6e3872ff5892cf29d1490",
-    "version": "5.1.0"
+    "hash": "993376392672b38d83e8edca290ef3183c850a4595c6e3872ff5892cf29d1490"
   },
   "skill-design-guide": {
-    "hash": "e6981ddcb3c4e51475c821ac78c8aa600db9eabb64c2945d3cc9b4b388875280",
-    "version": "1.11.2"
+    "hash": "e6981ddcb3c4e51475c821ac78c8aa600db9eabb64c2945d3cc9b4b388875280"
   },
   "skill-sync": {
-    "hash": "af0fd3f93978021c1407fcce5854c136106194dad2dd5029a01560bb9657734a",
-    "version": "1.21.0"
+    "hash": "af0fd3f93978021c1407fcce5854c136106194dad2dd5029a01560bb9657734a"
   },
   "spec": {
-    "hash": "3f657cc498e723a39308b9bec92081bfa50a26674fc3e466ee1878c13a02bd10",
-    "version": "1.6.2"
+    "hash": "3f657cc498e723a39308b9bec92081bfa50a26674fc3e466ee1878c13a02bd10"
   },
   "startup-check": {
-    "hash": "ee2cbc90ac96af03a3c8fa689e4a4a7014474fe7c3f0d9077f8f6b948a8df632",
-    "version": "1.0.0"
+    "hash": "ee2cbc90ac96af03a3c8fa689e4a4a7014474fe7c3f0d9077f8f6b948a8df632"
   },
   "strategic-compact": {
-    "hash": "d30c4b61bfcce7dce06b5f77a57239073ef8656f5805da6bae0440f75b1bc11e",
-    "version": "1.0.0"
+    "hash": "d30c4b61bfcce7dce06b5f77a57239073ef8656f5805da6bae0440f75b1bc11e"
   },
   "tdd": {
-    "hash": "792e438b9bc51a4b57816c7c7c0a287895a0147eff9cef5e48cf6bbcce32a8fe",
-    "version": "2.2.9"
+    "hash": "792e438b9bc51a4b57816c7c7c0a287895a0147eff9cef5e48cf6bbcce32a8fe"
   },
   "teaching-sync": {
-    "hash": "6b7e7c6f3ca0aa31d7713194a2ff455fa76413d4768cf6a384aa2c62f01009e7",
-    "version": "2.0.0"
+    "hash": "6b7e7c6f3ca0aa31d7713194a2ff455fa76413d4768cf6a384aa2c62f01009e7"
   },
   "team-design-evaluation": {
-    "hash": "5b6a43b648d121b0e42dabb6dbb3439b7d876edd49b1cf1027e595b84e5dcc03",
-    "version": "1.3.1"
+    "hash": "5b6a43b648d121b0e42dabb6dbb3439b7d876edd49b1cf1027e595b84e5dcc03"
   },
   "tech-debt-capture": {
-    "hash": "955996dd81f01d8a76206329b37c5cf3f232a003dd947993110c210473fb6ba0",
-    "version": "1.1.0"
+    "hash": "955996dd81f01d8a76206329b37c5cf3f232a003dd947993110c210473fb6ba0"
   },
   "test-assertion-design": {
-    "hash": "950f61e1765d614c0f3de5b55cee23578dca4f1d6425749348d85e2c958e6ee2",
-    "version": "1.2.0"
+    "hash": "950f61e1765d614c0f3de5b55cee23578dca4f1d6425749348d85e2c958e6ee2"
   },
   "test-effectiveness": {
-    "hash": "5d0bf1b5d26b153fbfe90dd8cbeac54effb2698a6763496c62b215f10a058a19",
-    "version": "2.1.0"
+    "hash": "5d0bf1b5d26b153fbfe90dd8cbeac54effb2698a6763496c62b215f10a058a19"
   },
   "ticket": {
-    "hash": "20f4c4dae05e699e32301aeae48bf3e89bbeded307d07646707cdcb366c38945",
-    "version": "2.30.1"
+    "hash": "20f4c4dae05e699e32301aeae48bf3e89bbeded307d07646707cdcb366c38945"
   },
   "ux-design-evaluation": {
-    "hash": "9f00764a4b2c71a05fa08e95e5035b7007eff74e3d1ca548090f6ea525622e5e",
-    "version": "1.4.3"
+    "hash": "9f00764a4b2c71a05fa08e95e5035b7007eff74e3d1ca548090f6ea525622e5e"
   },
   "verification-driven-cli": {
-    "hash": "50ecf6c6599814465ab0d95b42662794f56583c3b49c030b8a1023c6682c1ce4",
-    "version": "1.2.2"
+    "hash": "50ecf6c6599814465ab0d95b42662794f56583c3b49c030b8a1023c6682c1ce4"
   },
   "version-bootstrap": {
-    "hash": "8e10be80e14a00250585a6e12a407f5b7df6403f556e8b42f0438355f2f56a0d",
-    "version": "1.5.0"
+    "hash": "8e10be80e14a00250585a6e12a407f5b7df6403f556e8b42f0438355f2f56a0d"
   },
   "version-release": {
-    "hash": "9663ab7cd8af5d932e92152681a0bb124ed8b5ad90720fd2b4d652a759a77112",
-    "version": "2.1.0"
+    "hash": "9663ab7cd8af5d932e92152681a0bb124ed8b5ad90720fd2b4d652a759a77112"
   },
   "version-sequencing": {
-    "hash": "18f58aef1e16ee7142b75391b73cf35bc4e0c31c70e596175f6cf3c67ea293d7",
-    "version": "4.0.0"
+    "hash": "18f58aef1e16ee7142b75391b73cf35bc4e0c31c70e596175f6cf3c67ea293d7"
   },
   "worktree": {
-    "hash": "6fdfcf7a9c20bf2e58526ed2bba3894cf55667729f654cab787d6c2168175d08",
-    "version": "1.2.1"
+    "hash": "6fdfcf7a9c20bf2e58526ed2bba3894cf55667729f654cab787d6c2168175d08"
   },
   "wrap-decision": {
-    "hash": "c390e6c875c4d5280fe309359c2ec1ae199b9122cb83b1551cf840a9f29aa60a",
-    "version": "2.12.0"
+    "hash": "c390e6c875c4d5280fe309359c2ec1ae199b9122cb83b1551cf840a9f29aa60a"
   },
   "zellij": {
-    "hash": "4bd7fb435593c35ca9ceb357892d12e48e2891854d2019c87d63f472cd87c345",
-    "version": "1.0.0"
+    "hash": "4bd7fb435593c35ca9ceb357892d12e48e2891854d2019c87d63f472cd87c345"
   }
 }
