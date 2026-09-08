@@ -2,6 +2,8 @@
 
 新到舊。版號規則與兩個住址（本檔與 `SKILL.md` frontmatter 的 `metadata.version`）見專案的 skill 同步規範。
 
+**Version**: 2.2.3 — 一次跨 session 異源交換掃描（另一個並行 session 拿本 skill 的 2-D／3-F 判準掃同批稿件、本方拿對方判準互掃，誤報方向逐條並排）寫明的合規邊界補進兩份 round 檔。`round-2-cadence.md` 的 2-D（體例與定位一致）段末新增「合規邊界」子段五則：設計文件例外節登記後免掃、Why／Consequence 與 Action 同段判手冊、教材段標「（依據，非動作）」一段內可留、受眾為 skill／hook 開發者的節判手冊（受眾錯位另歸 2-C）、入口檔節內 Action 可由路由承接。`round-3-self-application.md` 的 3-F（誤用／激勵梯度）段末新增「不適用與合規邊界」子段四則：純查詢命令與判準二元事實不問三題、「痕跡」定義為可由第三方以固定值命令證偽的記錄且規則自陳無 CLI 檢查時不再列 finding、省力路徑與意圖等價（差距 0）改歸 1-C／2-B″、激勵梯度可由移除誘因消解與補痕跡並列為合法修法。均為既有判準的射程邊界補充，不改變既有判準語意。
+
 **Version**: 2.2.2 — 清理 14 處 language-constraints.md 規則 2 禁用詞基線債務（`數據` → 資料、`默認` → 預設，含歷史版本條目與現行 principle / spec 檔案），純用語修正；「資料時效標示」檢查維度更名同步反映在本檔與 `references/round-1-compliance.md`。指令內容與判準未改。
 
 **Version**: 2.2.1 — 為入口檔做出餘裕。2.2.0 的 SKILL.md 是 4,999 tokens 對 5,000 門檻，通過而沒有餘裕——下一次任何增修都會超標，而超標的那個人不會知道是誰把餘裕用完的。把〈派發之前先定這一批的定位〉裡「兩種定位並存」那段的推導與例子壓成一句加指向（判別在 principle 卡 `positioning-decides-form-before-any-rule-applies`），保留可執行的那一句（2-D 掃體例要排除目錄頁與歸納層）。現在 4,933 tokens，餘裕 67。**門檻內的位置本身是留給下一個人的資訊**：增修 SKILL.md 之前先量，量完把新的餘裕寫進該版的紀錄。
