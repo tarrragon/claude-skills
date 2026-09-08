@@ -2,11 +2,13 @@
 
 新到舊。版號規則與兩個住址（本檔與 `SKILL.md` frontmatter 的 `metadata.version`）見專案的 skill 同步規範。frontmatter 版號同步由後續收尾票統一處理，本檔先行遞增記錄。
 
-**Version**: 2.31.0
+**Version**: 2.31.1
 **Last Updated**: 2026-09-08
 **Status**: Completed
 
 **Change Log**:
+
+- v2.31.1 (2026-09-08): `track-command.md` 兩處跨檔指涉隨 worktree skill 的內容外移同步更新——原指 `worktree/SKILL.md` 的節與行號，改指其 `references/agent-isolation-worktree.md` 的具名章節。內容變更本身發生於 2.31.0 推送之後而版號未動，兩側同號異容，本版補號使分歧可由版號察覺
 
 - v2.31.0 (2026-09-08): 異源交換掃描的修法群——由另一個並行 session 拿同一份判準重掃本 skill，回報漏抓 8 則、誤判 6 則、已報未修 10 則，本版落地其可執行部分
   - **CLI**：`dispatch --dry-run` 輸出首行加 `[DRY-RUN 未落票]` 浮水印（正式骨架逐字不變），使貼進 prompt 的骨架可辨識是否曾落票；`dispatch` 不論有無 `--note` 一律把 `dispatch-readiness`／`dispatch-validate` 的 exit code 寫入派發日誌，取代原本無痕跡的分支；`dispatch-check` 新增 `--prune`，僅清理「`[STALE]` 且 `session_id` 確認不在 registry 內」的條目，`session_id` 為空或 registry 不可用一律保守保留，結果雙通道寫 stderr 與 hook 日誌。三者的共同形態是「認真做過與完全沒做，產物無差別」

@@ -595,7 +595,7 @@ ticket track commit <ticket_id> -m "<commit message>" --worktree <worktree 絕�
 
 ### `--worktree` 條件
 
-判斷條件是**呼叫 `ticket track commit` 當下 CLI process 的 cwd**；「檔案變更所在位置」不是判斷條件：未帶 `--worktree` 時，repo root 解析為 `resolve_project_cwd()` 所屬 repo，即 process cwd 所在的 repo（ticket shim 慣例於主 repo cwd 執行，故此路徑恆解析為主 repo）；帶 `--worktree <絕對路徑>` 時改以該路徑對應的 git repo root 為準（見 `track_commit.py:_resolve_repo_root` docstring）。**Consequence**：子代理人每次 Bash 呼叫的 cwd 依 harness 慣例重設回主倉庫，即使變更檔案實際存在於 linked worktree 內，只要呼叫當下 cwd 不在該 worktree，未帶 `--worktree` 就會綁定主 repo working tree 執行 git 操作——新檔案無法 `add`（不在主 repo working tree 認知範圍）、已修改檔案因主 repo 版本未變而誤判為空 tree 短路（見下方 Exit code 表）。**Action**：cwd 是否在目標 worktree 內不確定時，一律帶 `--worktree`；三種情境須逐一判斷（agent cwd 在 worktree 內／agent cwd 在主倉庫／PM cwd 被 runtime 切進 worktree，第三種見 `.claude/skills/worktree/SKILL.md:143`），檔案位置本身不足以推論是否需要此旗標。
+判斷條件是**呼叫 `ticket track commit` 當下 CLI process 的 cwd**；「檔案變更所在位置」不是判斷條件：未帶 `--worktree` 時，repo root 解析為 `resolve_project_cwd()` 所屬 repo，即 process cwd 所在的 repo（ticket shim 慣例於主 repo cwd 執行，故此路徑恆解析為主 repo）；帶 `--worktree <絕對路徑>` 時改以該路徑對應的 git repo root 為準（見 `track_commit.py:_resolve_repo_root` docstring）。**Consequence**：子代理人每次 Bash 呼叫的 cwd 依 harness 慣例重設回主倉庫，即使變更檔案實際存在於 linked worktree 內，只要呼叫當下 cwd 不在該 worktree，未帶 `--worktree` 就會綁定主 repo working tree 執行 git 操作——新檔案無法 `add`（不在主 repo working tree 認知範圍）、已修改檔案因主 repo 版本未變而誤判為空 tree 短路（見下方 Exit code 表）。**Action**：cwd 是否在目標 worktree 內不確定時，一律帶 `--worktree`；三種情境須逐一判斷（agent cwd 在 worktree 內／agent cwd 在主倉庫／PM cwd 被 runtime 切進 worktree，第三種見 `.claude/skills/worktree/references/agent-isolation-worktree.md`〈EnterWorktree mid-session 切換〉），檔案位置本身不足以推論是否需要此旗標。
 
 ### 與 append-log／complete auto-commit 的關係
 
@@ -659,7 +659,7 @@ ticket track set-exit-status <ticket_id> --status needs_context --reason "缺少
 
 **Consequence（誤判為缺陷時）**：worktree 內執行 `ticket track full <id>` 讀到的內容是主倉庫版本，不是該 worktree 分支上的版本；這是設計行為，不是 CLI 的 cwd 解析漏洞。誤判並「修復」（例如讓 ticket 狀態也改用 worktree 感知）會反轉此設計，重新引入票面分裂風險——曾有 IMP ticket 依此誤判方向規劃修復，經查證後改為本節文件澄清。
 
-**Action**：worktree 內需要確認「某次 ticket 狀態寫入是否已進入主倉庫」時，直接在主倉庫 cwd（或用 `git -C <主倉庫路徑>`）查詢，不依賴該 worktree working tree 內的 ticket md 檔案內容（後者不會被 ticket 狀態寫入更新）。完整設計理由見 `.claude/skills/ticket/ticket_system/lib/paths.py` 的 `get_ticket_state_root()` docstring；worktree 隔離邊界的完整脈絡（含 daemon-rooted 寫入工具洩漏等其他項目）見 `.claude/skills/worktree/SKILL.md`「Base ref 與隔離邊界」節。
+**Action**：worktree 內需要確認「某次 ticket 狀態寫入是否已進入主倉庫」時，直接在主倉庫 cwd（或用 `git -C <主倉庫路徑>`）查詢，不依賴該 worktree working tree 內的 ticket md 檔案內容（後者不會被 ticket 狀態寫入更新）。完整設計理由見 `.claude/skills/ticket/ticket_system/lib/paths.py` 的 `get_ticket_state_root()` docstring；worktree 隔離邊界的完整脈絡（含 daemon-rooted 寫入工具洩漏等其他項目）見 `.claude/skills/worktree/references/agent-isolation-worktree.md`「Base ref 與隔離邊界」節。
 
 ## 驗收條件操作詳解
 
