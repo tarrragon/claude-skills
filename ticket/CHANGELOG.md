@@ -2,12 +2,13 @@
 
 新到舊。版號規則與兩個住址（本檔與 `SKILL.md` frontmatter 的 `metadata.version`）見專案的 skill 同步規範。frontmatter 版號同步由後續收尾票統一處理，本檔先行遞增記錄。
 
-**Version**: 2.30.0
+**Version**: 2.30.1
 **Last Updated**: 2026-09-08
 **Status**: Completed
 
 **Change Log**:
 
+- v2.30.1 (2026-09-08): `batch-create` 的版本自動偵測改與 `create` 同源——原先只讀 `--version` 未給即報「無法偵測版本」，現改呼叫 `lib/version.py` 的 `resolve_version()`，同一專案結構下兩命令行為一致；明確指定 `--version` 時仍以指定值為準
 - v2.30.0 (2026-09-08): 拆分後續兩批修法（冷讀審查與 CLI 缺陷群）；SKILL.md 全檔 4,992 tokens、167 行，路由表雙向零命中
   - **CLI**：`set-blocked-by`／`set-related-to` 多值位置參數 help 明示引號包裹並附 epilog 範例；`track dashboard` 的 `[Handoff Target]` 改走 `resolve_target` 與 `resume --list` 一致，`is_handoff_stale` 補 closed 判定（`--gc`／`--from-worklog`／`resume --list` 共用），`create` 新增 `--dry-run`；`track list` 對 in_progress 列渲染與 dashboard 同源的 lease 標記（`lease.format_lease_tag`），`complete`／`finish` 的 `--as` help 改為強制 deny 語意；`AuditReport` 新增 `artifact_who`／`artifact_updated` 並於 `track audit` 輸出「執行者｜最後更新」行；dashboard auto-GC 歸檔寫持久日誌（`hook-logs/handoff-gc/`），Stop hook 的 stale handoff 由刪除改為歸檔並處理同名碰撞
   - **文件**：入口檔補五詞術語路由、路由表 field-semantics 用途欄與 root 分離節條件語意修正、裸 `complete` 範例補 `--as`；`architecture.md`〈術語〉鑑識三查第 3 查改為 soft warning（對齊 `lease.py`）並補三詞；三檔 `complete` 對 pending／blocked 的 exit code 統一為 2（對齊 `lifecycle.py`）；`track-command.md` 新增〈子命令總覽（全量對照 --help）〉涵蓋 89 個子命令，1-E 斷言支撐 F4–F17 補來源，`--as` 支援清單訂正為六命令；`resume-command.md` 兩處 `ticket track handoff` 改頂層 `ticket handoff`；`migrate`／`handoff`／`create`／`workflow-create` 指涉閉合與計數縮略修正；`create-command.md` 量測值補方法與環境
