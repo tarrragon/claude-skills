@@ -4,7 +4,7 @@ description: 'Use whenever the user wants to create, track, query, or manage tic
 argument-hint: '<subcommand> [args]'
 allowed-tools: Bash(ticket *), Read, Write, Edit, Grep, Glob
 metadata:
-  version: 2.30.1
+  version: 2.31.0
 ---
 
 # Ticket System
@@ -17,7 +17,7 @@ metadata:
 
 linked worktree 內執行 `ticket track` 系列命令時，ticket 狀態（md 讀寫）與程式碼提交走**兩條不同的 root 解析路徑**：狀態一律反向回推寫入主倉庫，提交依 cwd 或 --worktree 旗標解析——此為刻意設計，非 cwd 解析漏洞，誤判並「修復」會重新引入票面分裂風險。
 
-> 完整設計理由（Why/Consequence/Action）與查證方式：Read `references/track-command.md`「Ticket 狀態與程式碼提交的 root 分離」
+> 完整設計理由（Why/Consequence/Action）與查證方式：Read `references/track-command.md` 同名章節
 
 ---
 
@@ -41,7 +41,7 @@ linked worktree 內執行 `ticket track` 系列命令時，ticket 狀態（md �
 
 1. **取得接手聚合視圖** — 執行 `ticket track dashboard --top 5`
 
-   dashboard 一次回傳 `[In Progress]` + `[Handoff Target]`（待接手，`ticket resume <id>`）+ `[Ready Top N]` + `[Stale Warning]` 四區塊，Ready 區塊含可直接 claim 的編號 `[1] [2] [N]` 與 priority 標籤。設計目的與 tool call 量測：見 `references/track-command.md`〈track dashboard 子命令〉### 設計目的。
+   dashboard 一次回傳 `[In Progress]` + `[Handoff Target]`（待接手，`ticket resume <id>`）+ `[Ready Top N]` + `[Stale Warning]` 四區塊，Ready 區塊含可直接 claim 的編號 `[1] [2] [N]` 與 priority 標籤。設計目的：見 `references/track-command.md`〈track dashboard 子命令〉### 設計目的。
 
    [In Progress] 條目帶 lease 狀態標記（術語見 `references/architecture.md`〈術語〉）：`[LIVE]`＝FRESH session 處理中；`[RECLAIMABLE]`＝無 FRESH session 佐證持有（含 STALE／registry 未追蹤，須 reclaim）；無標記＝registry 不可用。
 
@@ -51,7 +51,7 @@ linked worktree 內執行 `ticket track` 系列命令時，ticket 狀態（md �
      - Ready 任務依 dashboard `[1] [2] [N]` 編號順序列出（label: `[{N}] {ticket_id} - {title}`, description: `[{priority}]`）
      - 額外選項：「建立新 Ticket」（description: `執行 /ticket create`）
      - 用戶選擇：
-       - 無標記 in_progress 任務 → `resume --list` 有列才 `ticket resume <selected_id>`；未列則 `ticket track full <selected_id>` 接手（票已 in_progress 無需 claim，接手時不改寫 `who.current`，依票面既有身份繼續操作）
+       - 無標記 in_progress 任務 → `resume --list` 有列才 `ticket resume <selected_id>`；未列則 `ticket track full <selected_id>` 接手（票已 in_progress 無需 claim；收尾身份見 `track-command.md`「接手者收尾身份」）
        - `[RECLAIMABLE]` 任務 → `ticket track reclaim <selected_id>`（dry-run 通過再 `--confirm`，見 `track-command.md`〈track reclaim 子命令〉）。拒絕：即停手回報 PM；持續拒絕非 bug
        - Ready 任務 → `ticket track claim <selected_id>`
        - 建立新 Ticket → 引導進入 `/ticket create` 流程
@@ -105,10 +105,10 @@ linked worktree 內執行 `ticket track` 系列命令時，ticket 狀態（md �
 | `track dispatch` | 派發並落票，輸出代理人 prompt 骨架，見 track-command.md〈track dispatch 子命令〉 | `ticket track dispatch <id> --as <agent> --dry-run` | — | — |
 | `track commit` | 隔離索引精確提交（files 為 `where.files` 子集），見 track-command.md〈track commit 子命令〉 | `ticket track commit <id> -m "..." -- {exact files}` | — | — |
 | `track dispatch-check` | 列出目前活躍派發，見 track-command.md〈track dispatch-check 子命令〉 | `ticket track dispatch-check` | — | — |
-| `track` | 設定或釐清 Ticket 血緣/依賴/關聯欄位與 where.files 語意、阻擋情境判斷 | — | `references/field-semantics.md` | 〈適用範圍〉〈六欄位定義〉〈阻擋語意對照表〉〈用戶情境對照表〉〈欄位選擇決策樹〉〈反模式速查〉〈相關文件〉 |
+| `track` | 設定或釐清 Ticket 血緣/依賴/關聯欄位與 where.files 語意、阻擋情境判斷 | — | `references/field-semantics.md` | 〈適用範圍〉〈六欄位定義〉〈阻擋語意對照表〉〈用戶情境對照表〉〈欄位選擇決策樹〉〈反模式速查〉〈設計沿革〉〈相關文件〉 |
 | `track` | 查詢 Ticket 生命週期詳細規則（建立格式、驗收條件、決策樹路徑等） | — | `references/ticket-lifecycle-details.md` | 〈任務鏈後續步驟建議〉〈任務鏈 ID 格式〉〈Ticket 建立格式範本〉〈驗收條件 4V 格式要求〉〈Ticket 有效性驗證〉〈驗收前置條件檢查流程〉〈acceptance-gate-hook 技術細節〉〈驗收提示訊息模板〉〈P0 緊急任務處理〉〈簡化驗收檢查清單〉〈與其他流程的整合〉 |
 | `handoff` | 任務鏈管理與 Context 交接：支援自動判斷方向、指定交接到父/子/兄弟任務，含絕對指向（`--next`）與從 worklog 批次補建（`--from-worklog`）。五種交接情境 | `/ticket handoff <id> --to-sibling <id2>` | `references/workflow-handoff.md` | 〈交接流程決策樹〉〈狀態-命令映射規則〉〈任務鏈結束決策樹〉〈恢復流程決策樹〉 |
-| `handoff` | 需要設計意圖/指向語意/情境細節時讀本檔 |  | `references/handoff-command.md` | 〈設計意圖〉〈指向語意：source vs target〉〈用法〉〈自動偵測行為〉〈Session 結束時的使用方式〉〈按 Ticket 狀態選擇命令〉〈任務鏈結束時的替代流程〉〈五種情境〉<!-- rule8-exempt: relocation:自 references/handoff-command.md 逐字搬移 --> |
+| `handoff` | 需要旗標對照/指向語意/情境細節時讀本檔 |  | `references/handoff-command.md` | 〈移動方向與旗標對照〉〈指向語意：source vs target〉〈用法〉〈自動偵測行為〉〈Session 結束時的使用方式〉〈按 Ticket 狀態選擇命令〉〈任務鏈結束時的替代流程〉〈五種情境〉<!-- rule8-exempt: relocation:自 references/handoff-command.md 逐字搬移 --> |
 | `resume` | 恢復任務：從 handoff 檔案載入 context；SessionStart hook 僅被動提醒，實際觸發見〈無子命令時的預設行為（dashboard-first）〉；`/ticket resume <id>` 可明確恢復指定任務（交接/恢復決策樹與 `handoff` 共用 `references/workflow-handoff.md`，見上列） | `/ticket resume <id>` | `references/resume-command.md` | 〈用法〉〈恢復機制（顯式觸發）〉〈Flag 說明〉〈handoff JSON 格式〉〈相關 Hook〉 |
 | `migrate` | Ticket ID 遷移：支援單一和批量遷移，自動更新所有 ID 引用和 chain 資訊 | `/ticket migrate <old-id> <new-id>` | `references/workflow-migrate.md` | 〈ID 遷移決策樹〉 |
 | `migrate` | 需要前置檢查/批量配置/collision detection 細節時讀本檔 |  | `references/migrate-command.md` | 〈基本用法〉〈前置檢查（強制）〉〈單一遷移範例〉〈批量遷移配置檔案格式〉〈遷移邏輯〉〈Collision Detection〉〈備份機制〉〈Flag 說明〉<!-- rule8-exempt: relocation:自 references/migrate-command.md 逐字搬移 --> |

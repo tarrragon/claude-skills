@@ -57,7 +57,7 @@
 
 > 版本目錄無獨立初始化子命令（`ticket --help` 無 `init`）：`create` 執行時以 `get_tickets_dir(version)` 自動 `mkdir(parents=True, exist_ok=True)`，版本目錄不存在時 `create` 直接建立。
 
-**重要**：建立時（含子任務、DOC 類型），`ticket_builder.py` 的 `validate_create_checklist` 要求至少一項 `--where-files`（或 `--where`）與至少一項 `--acceptance`；`create` 命令層缺任一項即於持久化前 `exit 1` 阻擋，`--force` 可跳過此檢查（僅印 WARNING）。此外建立根任務時，必須提供 `--decision-tree-entry`、`--decision-tree-decision`、`--decision-tree-rationale` 三個參數。只在以下情況可省略 decision-tree 三參數：
+**重要**：建立時（含子任務、DOC 類型），`ticket_builder.py` 的 `validate_create_checklist` 要求至少一項 `--where-files`（或 `--where`）與至少一項 `--acceptance`，且 `--when` 不可留空（省略時預設為字面「待定義」，驗證即視為缺失）；`create` 命令層缺任一項即於持久化前 `exit 1` 阻擋（`CHECKLIST_VALIDATION_FAILED`），`--force` 可跳過此檢查（僅印 WARNING）。此外建立根任務時，必須提供 `--decision-tree-entry`、`--decision-tree-decision`、`--decision-tree-rationale` 三個參數。只在以下情況可省略 decision-tree 三參數：
 - 建立子任務（使用 `--parent` 參數）
 - Ticket 類型為 DOC（`--type DOC`）
 

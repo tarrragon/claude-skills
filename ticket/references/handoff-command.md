@@ -6,9 +6,9 @@
 >
 > **溯源**：本檔於本專案匯入 commit `f375ae675` 時即已存在；本機 git log 僅見後續章節 TOC 補齊，未見原始拆分點（可用 `git log --oneline -- references/handoff-command.md` 查證）。
 
-本檔章節：〈設計意圖〉〈指向語意：source vs target〉〈用法〉〈自動偵測行為〉〈Session 結束時的使用方式〉〈按 Ticket 狀態選擇命令〉〈任務鏈結束時的替代流程〉〈五種情境〉。
+本檔章節：〈移動方向與旗標對照〉〈指向語意：source vs target〉〈用法〉〈自動偵測行為〉〈Session 結束時的使用方式〉〈按 Ticket 狀態選擇命令〉〈任務鏈結束時的替代流程〉〈五種情境〉。
 
-## 設計意圖
+## 移動方向與旗標對照
 
 handoff 是**任務鏈內的 context 移動機制**，不是通用的「下一個任務」路由器。
 
@@ -178,7 +178,7 @@ commit-handoff-hook 偵測到 `git commit` 成功後，PM 會用 AskUserQuestion
 | 同 Wave 全部完成 | 無 pending/in_progress ticket | Wave 收尾流程（決策樹第八層情境 C） |
 | 跨 Wave 繼續 | 當前 Wave 完成，下個 Wave 有任務 | `/ticket`（列出下一 Wave 待辦） |
 
-completed ticket 不 handoff 到無關任務：理由見〈設計意圖〉。任務鏈結束後，應回到 `/ticket` 入口重新選擇任務。
+completed ticket 不 handoff 到無關任務：理由見〈移動方向與旗標對照〉。任務鏈結束後，應回到 `/ticket` 入口重新選擇任務。
 
 **快速參考**：
 
@@ -203,5 +203,5 @@ completed ticket，想繼續工作？
 | 4    | 兄弟可選 | 子完成但有平行任務待處理 |
 | 5    | 等待     | 有依賴未滿足             |
 
-> **`--next`（絕對指向）不在此表**：此表列的是任務鏈狀態自動判斷方向的觸發條件；`--next` 為顯式旗標指定下 session 該做的 target ticket，不依賴任務鏈狀態推導。語意見上方〈設計意圖〉表第五列與〈--next 子旗標〉節。
+> **`--next`（絕對指向）不在此表**：此表列的是任務鏈狀態自動判斷方向的觸發條件；`--next` 為顯式旗標指定下 session 該做的 target ticket，不依賴任務鏈狀態推導。語意見上方〈移動方向與旗標對照〉表第五列與〈--next 子旗標〉節。
 

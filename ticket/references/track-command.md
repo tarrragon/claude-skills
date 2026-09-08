@@ -492,6 +492,8 @@ ticket track set-closed-by <id> --value <ticket-id>
 
 `complete` / `check-acceptance` / `set-acceptance` 三個寫入命令支援選用 `--as <agent-name>`，與 ticket `who.current` 精確對照。**Why**：防 generic agent 收 Ticket ID 即越權收尾（PC-V1-002 前提一，探針實證）。**判定邏輯**：`--as` 值 ≠ `who.current`（含空值）→ deny（exit 1，純前置檢查不寫入狀態）；`--as rosemary-project-manager` 一律放行（PM bookkeeping 豁免，如代收尾 / stale cleanup）；未提供 `--as` 時 `complete`（`finish` 別名同列）已轉強制 deny，`check-acceptance` / `set-acceptance` 仍維持 warn-only（僅輸出 stderr 訊息，不阻擋；過渡期設計，見 `identity_guard.py` 的 `ENFORCED_COMMANDS`）。**Action**：subagent 收尾時帶自身身份，例 `ticket track complete <id> --as thyme-python-developer`；其餘 warn-only 命令轉強制的結束條件與偵測承擔者已明訂（7 日滾動 warn 率 < 5% 且樣本數 >= 30，由 PM 於 `version-release` 發布前檢查階段執行 `identity_guard_adoption.py` 判定），非待評估的無 trigger 狀態。
 
+**接手者收尾身份**（SKILL.md〈dashboard-first〉步驟 1「無標記 in_progress 任務」情境——票已 `in_progress`、非新 `claim`，接手者不必然是 `who.current` 原持有者）：維持原 `who.current` 不變逕行 `complete --as <self>` 會因情境 4（`--as` 與 `who.current` 不符）被 deny。**Action**：PM 前台接手裸 `/ticket` 用 `--as rosemary-project-manager` 走情境 2 豁免收尾；代理人接手（非原 `who.current` 者）須先 `ticket track set-who <id> --current <self>` 把 `who.current` 改為自身（`set-who` 不在 `ENFORCED_COMMANDS`，不受本節 `--as` 檢查），再以 `--as <self>` 收尾走情境 3 對稱通過。`set-who` 只覆寫 `who.current` 子欄位、不動 `who.history`（見 `execute_set_who`），接手事實須自行於 Solution 或 append-log 記一行「接手自 <原 who.current>」留痕，否則身份轉移在 `who.history` 上無痕跡。
+
 ### claim 推薦用法（subagent 派發時的身份申報）
 
 被派發的 subagent 認領自身 ticket 時，**推薦使用 `ticket track claim <id> --as <self-agent-name>`**（申報自身身份；不加 `--verify`）。
@@ -510,6 +512,7 @@ ticket track set-closed-by <id> --value <ticket-id>
 | 不申報身份的裸認領（向後相容） | `ticket track claim <id>` | 不碰 who.current；收尾若需 complete --as 須自行 set-who |
 | 除錯時想 claim 並同時跑 AC 驗證 | `ticket track claim <id> --verify --yes` | `--yes` 在非互動環境短路驗證 prompt 為 y，避免 fail-closed |
 | 只想看 AC 驗證結果不 claim | `ticket track verify <id>` | 與 claim 解耦（`--skip-verify` 已移除，改用此子命令） |
+| 接手既有 in_progress 票（非新 claim，dashboard-first「無標記 in_progress」情境） | 代理人：`ticket track set-who <id> --current <self>` 後 `complete --as <self>`；PM：直接 `--as rosemary-project-manager` | 見上方「接手者收尾身份」；`set-who` 不動 `who.history`，須自行記接手留痕 |
 
 ### 補標記 — `add-exempt-marker`
 
@@ -588,9 +591,11 @@ ticket track commit <ticket_id> -m "<commit message>" --worktree <worktree 絕�
 
 **目錄展開的並行過濾**：展開時另讀取 `.claude/dispatch-active.json`，凡命中其他活躍派發（`ticket_id` 不同於本票）宣告路徑的變更檔一律排除，避免並行環境下把他 session 的變更一併吸入本次目錄展開（本票或無人宣告皆保留，僅排除已知歸屬他票者）。此過濾為並行防護的加強層，非安全邊界本身——安全邊界仍是上段的 `where.files` 子集檢查；registry 讀取失敗（檔案不存在／JSON 格式錯誤）視為無其他派發，fail-open 不擋下正常提交。
 
+**同檔邊界（隔離索引不防同檔內容夾帶）**：上述並行過濾與 `where.files` 子集檢查防的是「誤觸他票宣告路徑之外的檔案」；當兩票 `where.files` 都宣告**同一檔案**時，兩者皆不提供保護。隔離索引（`git_ops.commit_files_isolated`）只隔離「不觸碰共用 git index」，`git add -- <path>` 取用的仍是該檔案當下的工作區內容——先提交者會把他票尚未提交的同檔編輯整檔一併寫入本次 commit。此邊界與 `.claude/rules/core/bash-tool-usage-rules.md` 規則七「核對步驟的粒度邊界（檔案內夾帶）」同根因：`git add` 的最小可定址單位是整個檔案，無法區分「誰寫的哪一行」；該條文原僅論及裸 commit 的核對步驟，本命令的隔離索引提交同樣適用（配方步驟見 `.claude/references/bash-tool-usage-details.md`「隔離索引提交」步驟 4）。**偵測**：提交後以 `git show <sha>:<path>` 對照自己實際編輯的內容範圍，出現非自己寫入的變更即為夾帶。**處置**：依上方 Commit 規範不 revert / reset / amend，記錄 commit SHA 與受影響檔案回報 PM。**Action**：兩票 `where.files` 宣告同一檔案時必須序列化，不因改用本命令而豁免；派發前以 `ticket track conflicts --for <本票>` 確認無其他 in_progress 票宣告該檔（見 `.claude/pm-rules/parallel-dispatch.md`「派發前 where.files 交集檢查」）。
+
 ### `--worktree` 條件
 
-判斷條件不是「檔案變更所在位置」，而是**呼叫 `ticket track commit` 當下 CLI process 的 cwd**：未帶 `--worktree` 時，repo root 解析為 `resolve_project_cwd()` 所屬 repo，即 process cwd 所在的 repo（ticket shim 慣例於主 repo cwd 執行，故此路徑恆解析為主 repo）；帶 `--worktree <絕對路徑>` 時改以該路徑對應的 git repo root 為準（見 `track_commit.py:_resolve_repo_root` docstring）。**Consequence**：子代理人每次 Bash 呼叫的 cwd 依 harness 慣例重設回主倉庫，即使變更檔案實際存在於 linked worktree 內，只要呼叫當下 cwd 不在該 worktree，未帶 `--worktree` 就會綁定主 repo working tree 執行 git 操作——新檔案無法 `add`（不在主 repo working tree 認知範圍）、已修改檔案因主 repo 版本未變而誤判為空 tree 短路（見下方 Exit code 表）。**Action**：cwd 是否在目標 worktree 內不確定時，一律帶 `--worktree`；三種情境須逐一判斷（agent cwd 在 worktree 內／agent cwd 在主倉庫／PM cwd 被 runtime 切進 worktree，第三種見 `.claude/skills/worktree/SKILL.md:143`），檔案位置本身不足以推論是否需要此旗標。
+判斷條件是**呼叫 `ticket track commit` 當下 CLI process 的 cwd**；「檔案變更所在位置」不是判斷條件：未帶 `--worktree` 時，repo root 解析為 `resolve_project_cwd()` 所屬 repo，即 process cwd 所在的 repo（ticket shim 慣例於主 repo cwd 執行，故此路徑恆解析為主 repo）；帶 `--worktree <絕對路徑>` 時改以該路徑對應的 git repo root 為準（見 `track_commit.py:_resolve_repo_root` docstring）。**Consequence**：子代理人每次 Bash 呼叫的 cwd 依 harness 慣例重設回主倉庫，即使變更檔案實際存在於 linked worktree 內，只要呼叫當下 cwd 不在該 worktree，未帶 `--worktree` 就會綁定主 repo working tree 執行 git 操作——新檔案無法 `add`（不在主 repo working tree 認知範圍）、已修改檔案因主 repo 版本未變而誤判為空 tree 短路（見下方 Exit code 表）。**Action**：cwd 是否在目標 worktree 內不確定時，一律帶 `--worktree`；三種情境須逐一判斷（agent cwd 在 worktree 內／agent cwd 在主倉庫／PM cwd 被 runtime 切進 worktree，第三種見 `.claude/skills/worktree/SKILL.md:143`），檔案位置本身不足以推論是否需要此旗標。
 
 ### 與 append-log／complete auto-commit 的關係
 
@@ -795,6 +800,8 @@ ticket track depth <ticket-id>
 ```
 
 沿 `parent_id` 鏈計算嵌套深度（**非** ID 字串數點，避免完整版本前綴如 `<version>-W<wave>-<seq>.<sub>` 本身即含 3 個點，被誤算為 depth 4 的 fatal bug）。輸出 `depth` / `max_depth`（= `MAX_TICKET_DEPTH=3`）/ `can_descend`（`depth < MAX_TICKET_DEPTH`）。深度定義：根任務（`parent_id: null`）= depth 1，每往下一層 +1。用途：agent 自檢層級自覺（協議 v2 D3），無需上層 prompt 傳遞層級資訊。
+
+> **與 frontmatter `chain.depth` 的基數差異**：本命令輸出的 `depth` 是即時沿 `parent_id` 鏈計算的動態值，根任務 = 1（1-based）。`ticket-lifecycle-details.md`〈chain 欄位說明〉的 frontmatter `chain.depth` 是建立當下依 ID 序號點數寫入的靜態快照，根任務 = 0（0-based），與本命令為同名不同來源的獨立量測值，不可互換代入（詳見該節注記）。`can_descend` 與 `MAX_TICKET_DEPTH` 比較一律以本命令輸出為準。
 
 `create --parent <id>` 時，若新子任務深度 >= `MAX_TICKET_DEPTH`（3）會 emit warning（**不硬擋**，留旁路）。此為嵌套派發深度上限的 CLI 強制層，使協議深度上限不只是文件建議。
 
@@ -1159,9 +1166,11 @@ ticket track list [--pending|--in-progress|--completed|--blocked] \
 
 W10-115 引入的預設排序：
 
-1. **priority 排序**：P0 > P1 > P2 > P3（未指定 priority 視為 P3）
-2. **created 排序**：同 priority 內 ISO 8601 時間升序（早建立的優先）
-3. **id 排序**：同 created 時間內字典序（穩定排序）
+| 順序 | 排序依據 | 規則 | 括號說明的性質 |
+|------|---------|------|--------------|
+| 1 | priority | P0 > P1 > P2 > P3 | fallback 規則：未指定 priority 視為 P3 |
+| 2 | created | 同 priority 內 ISO 8601 時間升序 | 同義改寫：早建立的優先 |
+| 3 | id | 同 created 時間內字典序 | 目的：達成穩定排序 |
 
 `--all` 旗標跳過排序與限制，輸出純粹按檔案系統載入順序。
 
@@ -1240,7 +1249,7 @@ ticket track dispatch <ticket_id> --as <agent_name> --dry-run   # 只看骨架�
 | `--review-perspective` | 無 | `--kind review` 專用：審查視角 |
 | `--decision-question` | 無 | `--kind review` 專用：裁決問題 |
 | `--commit-policy` | `agent` | `agent`（骨架嵌入精準 staging 制式句權威版全文，冪等寫入**票面 body**的「Commit 規範」子章節，非本檔章節）／`pm`（PM 統一 commit，agent 不執行）／`none`（本次派發不涉及 commit） |
-| `--dry-run` | 關閉 | 只輸出骨架，不寫入票面（不落 `--note`、不冪等寫入「Commit 規範」子節）；預設行為（非 dry-run）不變 |
+| `--dry-run` | 關閉 | 只輸出骨架，不寫入票面（不落 `--note`、不冪等寫入「Commit 規範」子節、不呼叫派發前檢查）；輸出首行加浮水印 `[DRY-RUN 未落票]`；預設行為（非 dry-run）不變 |
 | `--version` | 無 | 指定版本（預設自動偵測 active 版本） |
 
 ### 骨架去向
@@ -1251,11 +1260,14 @@ ticket track dispatch <ticket_id> --as <agent_name> --dry-run   # 只看骨架�
 
 | 項目 | 正常呼叫 | `--dry-run` |
 |------|---------|-------------|
-| 骨架輸出 | 相同 | 相同（骨架組裝不依賴票面寫入結果） |
-| `--note` 寫入「派發日誌」 | 執行 | 略過 |
+| 骨架輸出 | 骨架本體逐字相同（組裝不依賴票面寫入結果） | 首行加浮水印 `[DRY-RUN 未落票]`，其餘骨架本體逐字與正常呼叫相同——貼入 prompt 後可辨識是否曾落票 |
+| 內部呼叫 `dispatch-readiness`／`dispatch-validate`，exit code 落「派發日誌」（`readiness=N validate=N`） | 執行（診斷文字靜音，僅取 exit code） | 略過 |
+| `--note` 寫入「派發日誌」 | 執行（與上列 exit code 同一則 entry） | 略過 |
 | `--kind normal` 且 `--commit-policy agent` 時冪等寫入「Commit 規範」子節 | 執行 | 略過 |
 | 票存在性檢查 | 執行（唯讀） | 執行（唯讀） |
 | 適用情境 | 正式派發 | PM 量測骨架行數、預覽 prompt，可重複執行不需事後 checkout 還原票面 |
+
+**派發日誌 entry 恆定寫入**：不論是否帶 `--note`，正常呼叫（非 dry-run）一律在「派發日誌」新增一則帶時間戳的 entry，格式為 `[時間戳] {--note 文字（若有）｜}readiness=N validate=N`——使「認真跑過派發前檢查」與「完全沒做」在票面產生可辨識差異，取代原本兩者骨架逐字相同、無從辨識是否曾落票的狀態。
 
 ### 設計約束
 
@@ -1264,6 +1276,8 @@ ticket track dispatch <ticket_id> --as <agent_name> --dry-run   # 只看骨架�
 ### 派發前檢查順序
 
 六個派發前命令各自只回答單一問題，無單一命令涵蓋全部派發前檢查；建議順序：`dispatch-readiness`（單票認知負擔軟性拆分閾值是否過大）→ `dispatch-validate`（Context Bundle 自動填料是否可信）→ `parallel-check`（與其他候選票是否有 `where.files` 交集）→ `dispatch`（輸出骨架並落票）。`dispatch-check`（協調狀態檔案是否有其他活躍派發）與 `conflicts --among`（跨票交集的另一角度）為正交的輔助檢查，可在上述順序任一時點插入，不佔固定位置。外部 `.claude/pm-rules/parallel-dispatch.md`〈並行安全檢查〉的檢查項目僅 `conflicts` 有具名 CLI 對映，其餘多為判斷式描述；`.claude/pm-rules/task-splitting.md`〈3b 派發前檢查〉僅點名 `dispatch-readiness`。**Action**：兩份外部文件與本節六命令順序不一致時，以本節命令排序為準，外部文件視為對應子集的摘要。
+
+**`dispatch` 已內部呼叫前兩項並落痕**：`dispatch`（非 `--dry-run`）執行時會內部呼叫 `dispatch-readiness`／`dispatch-validate`（診斷文字靜音，僅取 exit code），將兩者結果記入「派發日誌」（見上節）。這使得就算 PM 跳過手動先跑這兩個命令、直接呼叫 `dispatch`，票面仍留下「派發前檢查曾經跑過、結果是什麼」的痕跡——取代原本兩者完全不跑也無法從骨架/票面辨識的狀態。**仍建議** PM 派發前手動先跑 `dispatch-readiness`／`dispatch-validate`，因為手動呼叫才有完整診斷文字（各項細目與建議）；`dispatch` 內部呼叫只留 exit code 數字，用於稽核「是否曾檢查」而非取代診斷閱讀。
 
 ## track dispatch-validate 子命令
 
@@ -1486,9 +1500,26 @@ ticket track dispatch-check
 | `dispatches` 非空 | `[WARN] 有 N 個活躍派發：` + 逐筆列出 `agent_description` / `ticket_id` / `dispatched_at` + 新鮮度標註（見下） | 1 |
 | 檔案讀取失敗、JSON 格式錯誤、或 root/`dispatches` 結構不符 | `[FAIL] ...`（stderr） | 2 |
 
-**新鮮度標註**：逐筆條目末尾附年齡標記，沿用 `track_dashboard.DEFAULT_STALE_THRESHOLD_MIN`（60 分鐘）同一新鮮度慣例——距今未逾 60 分鐘標 `(Nmin)`，逾閾值標 `[STALE Nmin]`。`dispatched_at` 缺失、格式錯誤或為未來時間時不猜測、不標記（fail-safe，年齡欄留空）。`[STALE]` 筆數 > 0 時，`[WARN]` 清單後另加一行彙總：`[WARN] 其中 N 筆逾 60 分鐘未見更新（[STALE] 標記），可能為遺留記錄，建議對照 track sessions 或人工清理`。
+**新鮮度標註**：逐筆條目末尾附年齡標記，沿用 `track_dashboard.DEFAULT_STALE_THRESHOLD_MIN`（60 分鐘）同一新鮮度慣例——距今未逾 60 分鐘標 `(Nmin)`，逾閾值標 `[STALE Nmin]`。`dispatched_at` 缺失、格式錯誤或為未來時間時不猜測、不標記（fail-safe，年齡欄留空）。`[STALE]` 筆數 > 0 時，`[WARN]` 清單後另加一行彙總：`[WARN] 其中 N 筆逾 60 分鐘未見更新（[STALE] 標記），可能為遺留記錄，建議對照 track sessions 或執行 dispatch-check --prune（僅清理 session 確認不存在的條目）`。
 
-**WARN 後下一步**：本命令僅標註新鮮度、不自動清理殘留條目，仍需人工核對。收到 `[WARN]` 時對照每筆條目的新鮮度標註與 `ticket track sessions` 的存活 session：`(Nmin)` 未逾閾值（該 agent 尚有機會回報）則暫緩新派發；`[STALE Nmin]` 且對應 session 已不存在，屬正常應由 `subagent-stop-dispatch-cleanup-hook.py`（SubagentStop 觸發）清除的殘留條目未被清除，需人工核對後手動清理 `.claude/dispatch-active.json` 對應項，不逕自視為「有活躍派發」而延後派發。
+**WARN 後下一步**：收到 `[WARN]` 時對照每筆條目的新鮮度標註與 `ticket track sessions` 的存活 session：`(Nmin)` 未逾閾值（該 agent 尚有機會回報）則暫緩新派發；`[STALE Nmin]` 且對應 session 已不存在，屬正常應由 `subagent-stop-dispatch-cleanup-hook.py`（SubagentStop 觸發）清除的殘留條目未被清除，改執行 `ticket track dispatch-check --prune` 交叉比對 pm-registry 清理，不再逕自手動改 `.claude/dispatch-active.json`（見下節）；不逕自視為「有活躍派發」而延後派發。
+
+### `--prune`：清理「[STALE] 且 session 不存在」的條目
+
+```bash
+ticket track dispatch-check --prune
+```
+
+取代原「見 `[STALE]` 手動清理 `.claude/dispatch-active.json`」的無痕跡做法。判定條件為 AND：(1) 條目已標 `[STALE]`（見上方新鮮度標註）；(2) 條目 `session_id` 非空、且不在 `pm-registry.json`（`ticket track sessions` 同一來源）的 session 集合內。
+
+| `session_id` 狀態 | 處置 |
+|------|------|
+| 非空，且不在 registry 內 | 判定為「不存在」，清理 |
+| 非空，且仍在 registry 內（即使 registry 內該 session 本身標 STALE） | 保留——heartbeat 慢但仍存活的 agent，不可誤判為不存在 |
+| 空字串（無 session_id，舊格式條目） | 保留——無法歸戶，不可判定 |
+| registry 讀取失敗（git 不可用 / 檔案缺失 / 解析失敗） | 保留全部條目——無法判定時保守不清理，輸出 `[INFO] --prune：pm-registry 不可用，無法判定 session 是否存在，本次不清理` |
+
+清理結果雙通道輸出：stderr 逐筆列出 `agent`／`ticket`／`session_id`／`dispatched_at`，同時寫入 `.claude/hook-logs/dispatch-check-prune/dispatch-check-prune-{YYYYMMDD}.log`（`INFO` 級別，供事後稽核，符合可觀測性規則 4）。無符合條件的條目時輸出 `[INFO] --prune：無符合「[STALE] 且 session 不存在」條件的條目`，不誤報為已清理。清理後若 `dispatches` 歸零，回傳 `[PASS]`（exit 0）；仍有剩餘活躍派發則照常輸出 `[WARN]`（exit 1）。
 
 ### 與 track dispatch-validate 的差異
 
@@ -1740,7 +1771,7 @@ ticket track conflicts --among <id1,id2,...> [--include-heuristic] [--format {ta
 
 > 來源：multi-PM 協調層 Phase 2，入場四節彙整
 
-`onboard` 為輔助入口，非 PM 接手流程首選（見 `SKILL.md`〈無子命令時的預設行為（dashboard-first）〉，裸 `/ticket` 一律先走 dashboard-first 流程）；本命令讀四節（活同事／孤兒 entry／髒檔歸屬／可認領建議），把 session 啟動已印的 30+ hook 輸出牆收斂為單一固定值表，供需要多 PM 協調細節時查詢。`/clear` = session 死亡 + 新生：入場是從世界平面重建三問（我是誰 / 同事是誰 / 我手上有什麼），不是恢復記憶。
+`onboard` 為輔助入口，非 PM 接手流程首選（見 `SKILL.md`〈無子命令時的預設行為（dashboard-first）〉，裸 `/ticket` 一律先走 dashboard-first 流程）；本命令讀四節（活同事／孤兒 entry／髒檔歸屬／可認領建議），把 session 啟動已印的 30+ hook 輸出牆收斂為單一固定值表，供需要多 PM 協調細節時查詢。`/clear` 後入場是從世界平面重建三問（我是誰 / 同事是誰 / 我手上有什麼），不是恢復記憶。
 
 ### 用法
 

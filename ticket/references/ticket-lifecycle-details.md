@@ -56,8 +56,10 @@ Ticket ID 格式（含子任務序號 `{根ID}.{n}[.{n}...]`）與正則定義�
 |------|------|------|
 | root | string | 任務鏈根 ID |
 | parent | string/null | 直接父任務 ID |
-| depth | number | 深度（根=0） |
+| depth | number | 深度（根=0，0-based；與 `track depth` 命令輸出的基數不同，見下方注記） |
 | sequence | array | 序號路徑陣列 |
+
+> **與 `track depth` 命令的基數差異**：本欄位由 `calculate_chain_info`（`ticket_system/lib/id_parser.py`）依 ID 序號點數計算，寫入時即固定為建立當下的靜態快照，根任務 = 0（0-based）。`track-command.md`〈track deps / depth 子命令〉的 `ticket track depth <id>` 命令由 `ticket_system/lib/depth.py` 的 `compute_depth` 沿 `parent_id` 鏈即時計算，根任務 = 1（1-based），並用於 `MAX_TICKET_DEPTH=3` 與 `can_descend` 判定。兩者是同名不同來源的獨立量測值，不可互換代入——若把本欄位的 0-based 值直接拿去與 `MAX_TICKET_DEPTH` 比較，會使深度判斷少算一層。判斷是否可再往下派發（`can_descend`）一律以 `track depth` 命令輸出為準，不使用 frontmatter 的 `chain.depth`。
 
 ### 範例 chain 欄位
 

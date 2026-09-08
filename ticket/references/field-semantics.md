@@ -45,7 +45,7 @@
 | type | 預設意圖 | 理由 |
 |------|---------|------|
 | `ANA` | `read` | ANA 型票的產出是分析報告，非程式碼變更 |
-| 其餘（`IMP`／`DOC`／`ADJ`／無 type） | `write` | 無 type 或非 ANA 一律預設 `write`（保守）：判為 `write` 誤攔的代價僅犧牲一點並行效率（false positive）；判為 `read` 漏放的代價是真實寫入衝突未被攔下（false negative，可能資料遺失或互相覆寫）。兩者代價不對稱，不可為求並行效率優化成 `read` |
+| 其餘（`IMP`／`DOC`／`ADJ`／無 type） | `write` | 無 type 或非 ANA 一律預設 `write`（保守）：判為 `write` 誤攔的代價僅犧牲一點並行效率（false positive）；判為 `read` 漏放的代價是真實寫入衝突未被攔下（false negative，可能資料遺失或互相覆寫）。兩者代價不對稱，不可為求並行效率改判成 `read` |
 
 **目錄型宣告：展開、WARNING、dispatch 硬擋**（判定依據 PC-BAL-040：路徑結尾為 `/`，或指向 repo 內既有目錄，即為目錄型宣告）：
 
@@ -140,7 +140,7 @@
 
 ### relatedTo（陣列，array of IDs）
 
-**語意**：相關引用（弱關聯 metadata）。語意對稱、資料單向——A 與 B 互為關聯是雙向事實，但欄位只在單側寫入。不對稱源於建立順序：後建的票能引用先建的票，先建票建立當下對方尚不存在，非語意上只有一方相關。
+**語意**：相關引用（弱關聯 metadata）。語意對稱、資料單向——A 與 B 互為關聯是雙向事實，但欄位只在單側寫入（不對稱起源見檔尾〈設計沿革〉）。
 
 | 屬性 | 值 |
 |------|---|
@@ -163,7 +163,7 @@
 
 **禁止遞移**：union 僅取 1-hop（直接引用/被引用），不可沿 relatedTo 鏈遞移展開——A relatedTo B、B relatedTo C，不得推論 A 與 C 相關。relatedTo 是逐對宣告的弱關聯，遞移會把「A、B 同屬一批兄弟票」誤推成「A 與 C 也相關」，引入原本不存在的關聯。
 
-> 裁決（2026-08 定案，理由見 `CHANGELOG.md`）：維持儲存單向 + 消費端 1-hop symmetric union，反向索引工具實作為獨立追蹤項目，不在本檔範圍。
+> 裁決一（儲存方向）：見檔尾〈設計沿革〉與 `CHANGELOG.md`。
 
 #### context bundle 合法消費端
 
@@ -171,7 +171,7 @@
 
 此消費不影響排程與阻擋——Runqueue 過濾與 complete 阻擋皆與 relatedTo 無關，見上方「阻擋語意」「Runqueue 影響」——僅影響 context 供給：被 relatedTo 引用的票，其 what/why 摘要可能被抽入引用方的 context bundle。
 
-> 裁決（2026-08 定案，理由見 `CHANGELOG.md`）：relatedTo 是 context bundle 的合法消費來源，非規範外行為；流程訊號（排程、阻擋、血緣）與 context 供給是兩件事，前者維持無、後者已由既有實作承擔。
+> 裁決二（context bundle 消費）：見檔尾〈設計沿革〉與 `CHANGELOG.md`。
 
 ---
 
@@ -251,12 +251,20 @@ Q1: 上游 ticket 的結論「要求」此 ticket 落地嗎？
 
 ---
 
+## 設計沿革
+
+- **relatedTo 不對稱起源**：後建的票能引用先建的票，先建票建立當下對方尚不存在，非語意上只有一方相關。
+- **裁決一（儲存方向，2026-08 定案）**：維持儲存單向 + 消費端 1-hop symmetric union，反向索引工具實作為獨立追蹤項目，不在本檔範圍；完整論證見 `CHANGELOG.md`。
+- **裁決二（context bundle 消費，2026-08 定案）**：relatedTo 是 context bundle 的合法消費來源，非規範外行為；流程訊號（排程、阻擋、血緣）與 context 供給是兩件事，前者維持無、後者已由既有實作承擔；完整論證見 `CHANGELOG.md`。
+
+---
+
 ## 相關文件
 
 - `.claude/error-patterns/process-compliance/PC-091-ana-followup-as-siblings-not-children.md` — ANA 落地用 children 規則來源
-- `.claude/error-patterns/process-compliance/PC-073-ana-spawned-misused-as-children.md` — 早期 spawned 使用情境（已 deprecated 部分內容，現定位於「執行中發現獨立技術債」）
-- `.claude/pm-rules/ticket-lifecycle.md` — Ticket 生命週期完整規則（含「ANA Ticket 落地下游血緣選擇」章節）
-- `.claude/methodologies/atomic-ticket-methodology.md` — 任務鏈方法論（兄弟協調模式、聚合父重組範式）
+- `.claude/error-patterns/process-compliance/PC-073-ana-spawned-misused-as-children.md` — 早期 spawned 使用情境（狀態：已 deprecated 部分內容，現定位於「執行中發現獨立技術債」）
+- `.claude/pm-rules/ticket-lifecycle.md` — Ticket 生命週期完整規則（章節：含「ANA Ticket 落地下游血緣選擇」）
+- `.claude/methodologies/atomic-ticket-methodology.md` — 任務鏈方法論（內容：兄弟協調模式、聚合父重組範式）
 - `.claude/skills/ticket/references/create-command.md` —`--parent` vs `--source-ticket` CLI 副作用對比
 - `.claude/skills/ticket/references/track-command.md` — `set-blocked-by` / `set-related-to` 操作說明
 - `.claude/skills/ticket/references/track-command.md`〈READ 操作〉〈track deps / depth 子命令〉— `tree`/`chain`/`deps` 命令對血緣與衍生的視覺化分流

@@ -2,11 +2,18 @@
 
 新到舊。版號規則與兩個住址（本檔與 `SKILL.md` frontmatter 的 `metadata.version`）見專案的 skill 同步規範。frontmatter 版號同步由後續收尾票統一處理，本檔先行遞增記錄。
 
-**Version**: 2.30.1
+**Version**: 2.31.0
 **Last Updated**: 2026-09-08
 **Status**: Completed
 
 **Change Log**:
+
+- v2.31.0 (2026-09-08): 異源交換掃描的修法群——由另一個並行 session 拿同一份判準重掃本 skill，回報漏抓 8 則、誤判 6 則、已報未修 10 則，本版落地其可執行部分
+  - **CLI**：`dispatch --dry-run` 輸出首行加 `[DRY-RUN 未落票]` 浮水印（正式骨架逐字不變），使貼進 prompt 的骨架可辨識是否曾落票；`dispatch` 不論有無 `--note` 一律把 `dispatch-readiness`／`dispatch-validate` 的 exit code 寫入派發日誌，取代原本無痕跡的分支；`dispatch-check` 新增 `--prune`，僅清理「`[STALE]` 且 `session_id` 確認不在 registry 內」的條目，`session_id` 為空或 registry 不可用一律保守保留，結果雙通道寫 stderr 與 hook 日誌。三者的共同形態是「認真做過與完全沒做，產物無差別」
+  - **文件與實作對齊**：`architecture.md`〈術語〉鑑識三查改為第 3 查（缺 Exit Status）為 soft warning 不計入拒絕（對齊 `lease.py` 的 `GhostReport.clean`）；`complete` 對 pending／blocked 的 exit code 三檔統一為 2（對齊 `lifecycle.py`）；子任務未全完成為阻擋（exit 1、`--force` 可旁路），非原文的「交接流程」
+  - **接手身份規則**：原文「接手時不改寫 `who.current`」與 `complete` 強制 `--as` 合成後，把非原持有者逼向冒用他人身份這條唯一省力路徑。改為明訂兩條路——PM 接手走既有豁免；代理人接手先 `set-who --current <self>` 再 `--as <self>`，並註明 `set-who` 不寫 `who.history`，接手事實須自行留痕
+  - **同檔邊界**：〈track commit 子命令〉新增一節說明隔離索引只隔離共用 index、不隔離同一檔案的工作區內容——兩票宣告同一檔案時仍整檔取用，會吸入他票未提交的編輯（本批實測命中一次）；含偵測法與處置，並與框架的檔案內夾帶邊界互指
+  - **指涉閉合**：`resume-command.md` 兩處不存在的 `ticket track handoff` 改頂層 `ticket handoff`；`--as` 支援清單訂正為六命令；`depth` 兩套基數（frontmatter `chain.depth` 根為 0、`track depth` 根為 1）各補互指與誤用後果；`create` 的 `--when` 必填補進文件；`migrate` 訊號表主詞、`handoff` 歷史值具名、`create`／`workflow-create` 的數量縮略等九處修正
 
 - v2.30.1 (2026-09-08): `batch-create` 的版本自動偵測改與 `create` 同源——原先只讀 `--version` 未給即報「無法偵測版本」，現改呼叫 `lib/version.py` 的 `resolve_version()`，同一專案結構下兩命令行為一致；明確指定 `--version` 時仍以指定值為準
 - v2.30.0 (2026-09-08): 拆分後續兩批修法（冷讀審查與 CLI 缺陷群）；SKILL.md 全檔 4,992 tokens、167 行，路由表雙向零命中
