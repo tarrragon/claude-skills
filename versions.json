@@ -176,7 +176,7 @@
     "version": "1.0.0"
   },
   "project-init": {
-    "hash": "3a354ddd86db0b190bf92f27b37e2dad1aad70c9f96bc9f65718a2d51e1023a0",
+    "hash": "01ec2555e1ab2839f6fc2df1927a3c95ed53df8493fabed0b54a62a3b7a641f3",
     "version": "1.1.0"
   },
   "requirement-protocol": {
@@ -204,8 +204,8 @@
     "version": "1.24.0"
   },
   "spec": {
-    "hash": "3f657cc498e723a39308b9bec92081bfa50a26674fc3e466ee1878c13a02bd10",
-    "version": "1.6.2"
+    "hash": "b7c5b28c50f092d820878e626c21bfae5e88354702eb76b85ec2dce54c273f43",
+    "version": "1.8.0"
   },
   "startup-check": {
     "hash": "ee2cbc90ac96af03a3c8fa689e4a4a7014474fe7c3f0d9077f8f6b948a8df632",
