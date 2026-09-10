@@ -120,8 +120,8 @@
     "version": "6.3.1"
   },
   "framework-issue": {
-    "hash": "61b845145f088475b3de4b0cf54a5b33886bcacfd83e72c15235d2a7c437c3d2",
-    "version": "2.3.0"
+    "hash": "d5d927122b3377a119661e7de63c98d5322a221a53b39ccd523c6672e50c67b4",
+    "version": "2.4.0"
   },
   "frontend-with-playwright": {
     "hash": "f1c7bd48f304b5d44bb0750c328585f97ca6cca485d1a389bd3707516d810d4d",
