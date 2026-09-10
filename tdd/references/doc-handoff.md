@@ -138,7 +138,7 @@ GWT 種子產出後，由 Phase 1 設計者（非本銜接流程）判斷行為�
   └─ 邊界條件（來源：UC 替代場景）：空結果 / 無效 type / limit=0
 ```
 
-**分工邊界**：本銜接流程負責到「GWT 種子」，行為單元拆解是 Phase 1 的職責（見 `phase1/rules.md`「行為單元識別」章節）。
+**分工邊界**：本銜接流程負責到「GWT 種子」，行為單元拆解是 Phase 1 的職責（見 `phase1/rules.md`「行為單元識別」章節）。GWT 種子與行為單元拆解完成後，若專案已導入測試對象目錄，逐一登載為目錄條目（見 `references/test-object-catalogue.md` 起點 A 步驟 A6-A7），使每個測試對象有可追溯的規格來源。
 
 ---
 
@@ -154,7 +154,7 @@ doc 的 UC 已定義整合測試（資訊鏈），TDD 需決定哪些行為由�
 | 單一元件內部邏輯（schema 驗證、欄位轉換）        | **單元測試**              | 商業規則可單獨測試，不需要完整鏈路 |
 | 元件邊界行為（API 回傳格式、錯誤碼）             | **單元測試**              | 契約面由元件自身保證，不依賴上下游 |
 | 多元件互動的特定路徑（error 事件的特殊處理流程） | **整合測試**              | 特定路徑的互動需完整鏈路才能重現   |
-| 跨 app process 邊界（系統權限對話框、原生檔案選擇器、外部 process、通知中心） | **平台驗證測試**（見 `references/layered-test-strategy.md` 跨邊界補位形態<!-- TODO: 該文件補位章節仍在補齊中，章節標題定案後回填精確連結 -->） | headless 的 `integration_test` 驅動不到系統原生 UI 或外部程式，判定者是平台而非 app 自己，需另一種測試形態 |
+| 跨 app process 邊界（系統權限對話框、原生檔案選擇器、外部 process、通知中心） | **平台驗證測試**（見 `references/layered-test-strategy.md`「分層之外的補位形態」節「**跨邊界驗證**」） | headless 的 `integration_test` 驅動不到系統原生 UI 或外部程式，判定者是平台而非 app 自己，需另一種測試形態 |
 
 ### 判斷原則
 
@@ -173,7 +173,7 @@ doc 的 UC 已定義整合測試（資訊鏈），TDD 需決定哪些行為由�
 
 **與既有三值的關係**：「平台決定」不是與自己/串接/配置並列的第四個同軸選項，而是先問一個更前面的問題——**這個決定發生在 app process 內，還是外面？** 落在外面才問平台決定；落在裡面才繼續問自己/串接/配置三選一。此軸與既有三值是**正交關係**（跨邊界屬性獨立於「誰決定正確性」的軸），不是對三值的並列擴充。
 
-> BDD→單元拆分的完整判斷標準見 `references/bdd-behavior-testing.md`「BDD→單元拆分標準」章節。各層測試方法的詳細選擇、跨邊界步驟的具體測試形態見 `references/layered-test-strategy.md`<!-- TODO: 該文件補位章節仍在補齊中，章節標題定案後回填精確連結 -->。
+> BDD→單元拆分的完整判斷標準見 `references/bdd-behavior-testing.md`「BDD→單元拆分標準」章節。各層測試方法的詳細選擇、跨邊界步驟的具體測試形態見 `references/layered-test-strategy.md`「分層之外的補位形態」節「**跨邊界驗證**」。
 
 ### 與 UC 資訊鏈的關係
 
@@ -326,12 +326,15 @@ doc-handoff 銜接時，同步初始化 `docs/traceability.yaml` 的骨架：
 - `references/phase1/rules.md` — Phase 1 行為單元識別（GWT 種子的下游消費者）
 - `references/phase2/rules.md` — Phase 2 測試設計（最終測試案例設計）
 - `references/task-granularity-rules.md` — 粒度規則（UC→行為單元→測試→實作）
+- `references/test-object-catalogue.md` — 測試對象目錄（本文件回答「規格如何映射為測試輸入」，該檔回答「要測哪些對象、每個對象定義到什麼程度」）
 - `../saas-tech-selection/references/decision-record-template.md`<!-- portability-allow: 條件式引用，目標 skill 未必與本 skill 一同安裝 -->「銜接 doc 系統」— 上游銜接範本（若同專案安裝 saas-tech-selection skill；未安裝時本條不適用、非死鏈）
 
 ---
 
 **Last Updated**: 2026-09-08
-**Version**: 1.1.3 — 〈整合測試 vs 單元測試分工〉判斷原則加第三值「平台決定」：既有「自己決定／串接決定／配置決定」三值皆假設判定權威落在 app process 之內，跨邊界步驟（呼叫離開 app process）三值都給不出答案；新增小節說明平台決定與既有三值是正交關係（先問「決定發生在 app process 內還是外面」，而非並列第四選項），分工決策框架表同步加一列指向 `layered-test-strategy.md` 的跨邊界補位形態（該文件補位章節尚在補齊中，暫以檔案層級引用 + TODO 標記，待章節標題定案後回填精確連結）。
+**Version**: 1.1.5 — 〈GWT 種子與行為單元的分工邊界〉節補一句反向路由：GWT 種子與行為單元拆解完成後，若專案已導入測試對象目錄，登載為目錄條目，見新增的 `references/test-object-catalogue.md` 起點 A 步驟 A6-A7（該檔回答本檔與 layered-test-strategy 皆未涵蓋的「要測哪些對象」）。
+**Version**: 1.1.4 — 回填〈整合測試 vs 單元測試分工〉分工決策框架表與章節末路由句對 `layered-test-strategy.md` 的精確錨點（節標題「分層之外的補位形態」+ 詞條「**跨邊界驗證**」，取代 1.1.3 遺留的 TODO 暫代），並修正 1.1.3 條目中與正文相反的序數措辭（「加第三值」改為「補判準」，避免誤讀為第三或第四個同軸選項）。
+**Version**: 1.1.3 — 〈整合測試 vs 單元測試分工〉判斷原則補「平台決定」判準：既有「自己決定／串接決定／配置決定」三值皆假設判定權威落在 app process 之內，跨邊界步驟（呼叫離開 app process）三值都給不出答案；新增小節說明平台決定不是與三值並列的選項，而是與既有三值正交的另一軸（先問「決定發生在 app process 內還是外面」），分工決策框架表同步加一列指向 `layered-test-strategy.md` 的跨邊界補位形態（該文件補位章節尚在補齊中，暫以檔案層級引用 + TODO 標記，待章節標題定案後回填精確連結）。
 **Version**: 1.1.2 — 文件分級覆寫補執行載體：Phase 0 輸入映射表加「Proposal 文件維護決策 → 逐列覆寫 document-coherence 分級表、結果記進種子包」一列；新專案起手模式加「覆寫不隨 Phase 0 豁免消失」（proposal 越完整越觸發豁免、而覆寫輸入正來自 proposal、跳過 Phase 0 不能連帶跳過它）。修的是鏈路實證抓到的斷點：覆寫原本是三處互相引用、零處有執行指令的宣稱。冷讀輪抓到指令指向不存在的欄位（同類斷點在修復裡復發）：種子包 Phase 0 預填補「文件分級」行（預設生效也要標明——沒標與沒做在種子包上長得一樣）、執行步驟 5 補覆寫鉤子、檢查清單加一項。
 **Version**: 1.1.1 — 相關文件對 saas-tech-selection 的引用加條件語（未安裝該 skill 時非死鏈）、與 spec skill 的跨 skill 引用處置一致。
 **Version**: 1.1.0 — 種子包格式頂部加 scaffold 標記（消費時點 + 爭議以 UC 為準）、檢查清單同步加一項。動機：GWT 種子是 UC 場景的完整複本、UC 回補修訂後種子包沒有機制跟上、未標記身分時它讀起來像權威文件；依文件分級原則（`references/document-coherence.md`）把它明示為一次性 scaffold、消滅同步期待而不是新增同步義務。
