@@ -107,6 +107,10 @@
     "hash": "36879f3a4afc49d6c304341bb41f749a8722c2033c163fc73d783bc111fc6184",
     "version": "1.6.0"
   },
+  "event-flow-arbitration-design": {
+    "hash": "07519a9ccb2a03907e080241668cb360ffedc4e4320c9265850afb49bdff7f7f",
+    "version": "1.2.0"
+  },
   "evidence-driven-bugfix": {
     "hash": "1e92106d817c5d77a64e12d163c6bddc2b6d0d1fe5608fbb2f000841b481adc2",
     "version": "2.2.0"
