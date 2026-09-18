@@ -175,6 +175,10 @@
     "hash": "0fdf30e803e400bca524f7ce2aa594f3080421d261f1375d73abf3dba1fb0f81",
     "version": "1.0.0"
   },
+  "project-analysis": {
+    "hash": "327443970cd5c5fc872035944953eeddd24c9a178a66e44f8ea1fbba51b410f0",
+    "version": "1.1.0"
+  },
   "project-init": {
     "hash": "01ec2555e1ab2839f6fc2df1927a3c95ed53df8493fabed0b54a62a3b7a641f3",
     "version": "1.1.0"
