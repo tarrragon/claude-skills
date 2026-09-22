@@ -93,6 +93,7 @@ from .fields import (
     execute_add_acceptance,
     execute_remove_acceptance,
     execute_add_spawned,
+    execute_remove_spawned,
     execute_set_decision_tree,
 )
 # 導入批量操作模組
@@ -124,6 +125,8 @@ from .track_artifacts import (
 from .track_set_acceptance import execute_set_acceptance
 # 導入 set-closed-by 子命令（closed 票 frontmatter 欄位修正路徑）
 from .track_set_closed_by import execute_set_closed_by
+# 導入 restore 子命令（closed 票唯一合法出邊：closed -> pending 還原路徑）
+from .track_restore import execute_restore
 # 導入 set-exit-status / set-completion-info 子命令（1.5.0-W5-021 制式化內容生成）
 from .track_structured_body import (
     execute_set_exit_status,
@@ -511,6 +514,7 @@ def _create_command_handlers() -> dict:
         "check-acceptance": execute_check_acceptance,
         "set-acceptance": execute_set_acceptance,
         "set-closed-by": execute_set_closed_by,
+        "restore": execute_restore,
         "set-exit-status": execute_set_exit_status,
         "set-completion-info": execute_set_completion_info,
         "validate": execute_validate,
@@ -533,6 +537,7 @@ def _create_command_handlers() -> dict:
         "add-acceptance": execute_add_acceptance,
         "remove-acceptance": execute_remove_acceptance,
         "add-spawned": execute_add_spawned,
+        "remove-spawned": execute_remove_spawned,
         "set-decision-tree": execute_set_decision_tree,
         "audit": execute_audit,
         "audit-version": execute_audit_version,
@@ -750,6 +755,22 @@ def _register_lifecycle_commands(
         help="新的 closed_by 值，須為合法且存在的 Ticket ID",
     )
     p_set_closed_by.add_argument("--version", help=TrackMessages.ARG_VERSION)
+
+    # restore 操作（closed 票唯一合法出邊：closed -> pending 還原路徑）
+    p_restore = subparsers.add_parser(
+        "restore",
+        help="還原 closed 票為 pending（closed 態唯一合法出邊，需 --reason）",
+    )
+    p_restore.add_argument("ticket_id", help=TrackMessages.ARG_TICKET_ID)
+    p_restore.add_argument(
+        "--reason", required=True,
+        help="還原理由（必填，禁止靜默還原）",
+    )
+    p_restore.add_argument(
+        "--as", dest="as_agent", default="",
+        help="還原者身份（選填，寫入 restored_by；未提供時記為 PM）",
+    )
+    p_restore.add_argument("--version", help=TrackMessages.ARG_VERSION)
 
     # release 操作
     p_release = subparsers.add_parser("release", help=TrackMessages.HELP_RELEASE)
@@ -1021,6 +1042,12 @@ def _register_field_write_commands(
     p_add_spawned.add_argument("ticket_id", help=TrackMessages.ARG_TICKET_ID)
     p_add_spawned.add_argument("value", nargs="+", help="Spawned Ticket ID（可一次傳多個，對齊 Unix 慣例如 rm a b c）")
     p_add_spawned.add_argument("--version", help=TrackMessages.ARG_VERSION)
+
+    # remove-spawned 操作（補齊 add-spawned 的對稱移除介面，按 ID 而非索引）
+    p_rm_spawned = subparsers.add_parser("remove-spawned", help=TrackMessages.HELP_REMOVE_SPAWNED)
+    p_rm_spawned.add_argument("ticket_id", help=TrackMessages.ARG_TICKET_ID)
+    p_rm_spawned.add_argument("value", nargs="+", help="要移除的 Spawned Ticket ID（可一次傳多個，對齊 add-spawned）")
+    p_rm_spawned.add_argument("--version", help=TrackMessages.ARG_VERSION)
 
     # set-decision-tree 操作
     p_set_dt = subparsers.add_parser("set-decision-tree", help=TrackMessages.HELP_SET_DECISION_TREE)
