@@ -168,8 +168,8 @@
     "version": "1.10.0"
   },
   "parallel-evaluation": {
-    "hash": "35d80b7e1b7a3b227a1e6608ef140e0ba37cdd61ae08174f85884fdf9f693c57",
-    "version": "1.3.0"
+    "hash": "1bedd3dc681d45d13eb4d1bdee3650197130640b07edd33cee00362c3de40881",
+    "version": "1.3.1"
   },
   "pre-fix-eval": {
     "hash": "0fdf30e803e400bca524f7ce2aa594f3080421d261f1375d73abf3dba1fb0f81",
