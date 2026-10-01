@@ -27,6 +27,7 @@ import re
 import json
 import subprocess
 import logging
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Tuple, Dict
@@ -923,6 +924,21 @@ def print_overflow_migration_plan(overflow: List[Dict]) -> None:
     print_info(f"\n發版時前移（{len(overflow)} 個，不阻擋）：", 1)
     for t in overflow:
         print_info(f"  - {t['id']} -> v{t['target_version']}（{t['target_reason']}）", 2)
+
+
+def collect_overflow_tickets(version: str) -> List[Dict]:
+    """取得版本的前移清單（pending 且無 scope_blocker 的 Ticket）。
+
+    check 用以切換結尾建議、release 用以拒絕執行；清單來源與
+    migrate_overflow_tickets 相同（collect_ticket_scope_groups 的 overflow 組）。
+    """
+    root = get_project_root()
+    config = load_version_release_config(root)
+    pattern = config.get(
+        "worklog_path_pattern", DEFAULT_VERSION_RELEASE_CONFIG["worklog_path_pattern"]
+    )
+    tickets_dir = resolve_worklog_dir(root, version, pattern) / "tickets"
+    return collect_ticket_scope_groups(tickets_dir, version)["overflow"]
 
 
 def check_worklog_completed(version: str) -> Tuple[bool, List[str]]:
@@ -3595,24 +3611,28 @@ def snapshot_git_status_paths(root: Path) -> set:
 
     用途：作為 finish 收尾差集比對的基準快照。
     """
+    # -z：NUL 分隔且不做 quotepath 跳脫（CJK 路徑保持原文）。
+    # 記錄格式 "XY path"；X 或 Y 為 R/C 時後接一段 "origPath"。
     result = subprocess.run(
-        ["git", "status", "--porcelain"],
+        ["git", "status", "--porcelain", "-z"],
         cwd=root,
         capture_output=True,
         text=True,
         timeout=10,
     )
     paths = set()
-    for line in result.stdout.splitlines():
-        if not line:
+    fields = result.stdout.split("\0")
+    idx = 0
+    while idx < len(fields):
+        record = fields[idx]
+        idx += 1
+        if len(record) < 4:
             continue
-        body = line[3:] if len(line) > 3 else line.strip()
-        if " -> " in body:
-            old, new = body.split(" -> ", 1)
-            paths.add(old.strip().strip('"'))
-            paths.add(new.strip().strip('"'))
-        else:
-            paths.add(body.strip().strip('"'))
+        paths.add(record[3:])
+        if record[0] in "RC" or record[1] in "RC":
+            if idx < len(fields) and fields[idx]:
+                paths.add(fields[idx])
+            idx += 1
     return paths
 
 
@@ -3630,11 +3650,84 @@ def check_residual_after_finish(root: Path, baseline: set) -> List[str]:
     return _diff_new_paths(root, baseline)
 
 
+def resolve_activation_version_paths(root: Path) -> set:
+    """回傳啟用步驟會 bump 的版本檔，相對 root 的 posix 路徑集合。
+
+    與 ensure_version_activated 的 (c) 同源（resolve_version_source），含
+    config 指定的 monorepo 子目錄版本檔；git-tag 策略或找不到版本檔時為空集合。
+    """
+    version_file, _parser = resolve_version_source(
+        root, load_version_release_config(root)
+    )
+    if version_file is None:
+        return set()
+    try:
+        return {version_file.resolve().relative_to(root.resolve()).as_posix()}
+    except ValueError:
+        return set()
+
+
+GIT_LOCK_MAX_ATTEMPTS = 5
+GIT_LOCK_WAIT_SECONDS = 2.0
+
+
+def _is_git_lock_contention(stderr: str) -> bool:
+    """git 的鎖競爭錯誤文字（index.lock 與 ref 鎖皆為 `.lock': File exists`）。"""
+    return ".lock" in stderr and "File exists" in stderr
+
+
+def run_git_with_lock_retry(
+    args: List[str], root: Path, timeout: int = 10
+) -> subprocess.CompletedProcess:
+    """執行 git 寫入命令；遇鎖競爭以固定間隔重試，用盡即回傳最後一次結果。
+
+    絕不刪除鎖檔：鎖屬於留下它的 session，刪除會破壞對方正在進行的寫入。
+    非鎖競爭的失敗不重試，直接回傳。
+    """
+    attempt = 1
+    while True:
+        result = subprocess.run(
+            ["git", *args], cwd=root, capture_output=True, text=True, timeout=timeout
+        )
+        if (
+            result.returncode == 0
+            or not _is_git_lock_contention(result.stderr or "")
+            or attempt >= GIT_LOCK_MAX_ATTEMPTS
+        ):
+            return result
+        time.sleep(GIT_LOCK_WAIT_SECONDS)
+        attempt += 1
+
+
+def report_git_failure(
+    step: str, command: str, result: subprocess.CompletedProcess
+) -> None:
+    """失敗細節寫 stderr（命令、退出碼、git 原始錯誤），供發版流程中止時查閱。"""
+    detail = (result.stderr or "").strip() or "(git 無 stderr 輸出)"
+    sys.stderr.write(
+        f"[FAIL] {step}：{command}（exit {result.returncode}）\n{detail}\n"
+    )
+
+
+def abort_release_git_step(step: str, completed: List[str], remedy: str) -> bool:
+    """git 步驟中止訊息：已完成步驟 + 補救指令；回傳 False 供呼叫端直接 return。"""
+    done = "、".join(completed) if completed else "（無）"
+    tagged = any(item.startswith("建立 tag") for item in completed)
+    state = "tag 已在本地建立" if tagged else "未建立 tag、未推送"
+    sys.stderr.write(
+        f"[ABORT] {step} 失敗，發版中止（{state}）。\n"
+        f"  已完成步驟：{done}\n"
+        f"  補救：{remedy}\n"
+    )
+    return False
+
+
 def commit_changes(
     version: str,
     dry_run: bool = False,
     baseline: Optional[set] = None,
     commit_message: Optional[str] = None,
+    extra_paths: Optional[set] = None,
 ) -> bool:
     """提交檔案變更。
 
@@ -3644,16 +3737,20 @@ def commit_changes(
     ——寫死清單在副作用集合成長時（如前移 ticket 產生的 rename）必然落
     後，差集是自描述的。未提供 baseline 時退回舊版寫死清單行為（相容既
     有呼叫點）。
+
+    extra_paths：額外納入的明確路徑（如啟用步驟 bump 的版本檔），仍須同時
+    出現在差集內才會 stage，不擴大到任意路徑。
     """
     root = get_project_root()
     message = commit_message or f"docs: 版本 {version} 發布準備"
+    extra = extra_paths or set()
 
     try:
         if baseline is not None:
             stage_targets = [
                 p
                 for p in _diff_new_paths(root, baseline)
-                if p == "CHANGELOG.md" or p.startswith("docs/")
+                if p == "CHANGELOG.md" or p.startswith("docs/") or p in extra
             ]
             if not stage_targets:
                 return True
@@ -3662,19 +3759,27 @@ def commit_changes(
                 print_info(f"[SYNC] [預覽] 將提交檔案變更: {stage_targets}", 2)
                 return True
 
+            # add 失敗即中止：漏 stage 的檔案不會進 commit，後續 tag 會指向
+            # 不含該檔變更的 commit（定版內容缺漏卻已打 tag 並推送）。
             for path in stage_targets:
-                subprocess.run(["git", "add", path], cwd=root, timeout=10)
+                add_result = run_git_with_lock_retry(["add", "--", path], root)
+                # rename 的舊路徑側已不在工作區與 index，pathspec 不匹配屬正常
+                # （刪除已隨新路徑 staged），不是失敗。
+                vanished_rename_side = (
+                    "did not match any files" in (add_result.stderr or "")
+                    and not (root / path).exists()
+                )
+                if add_result.returncode != 0 and not vanished_rename_side:
+                    report_git_failure("提交變更", f"git add -- {path}", add_result)
+                    print_error(f"git add 失敗（{path}）")
+                    return False
 
-            result = subprocess.run(
-                ["git", "commit", "-m", message],
-                cwd=root,
-                capture_output=True,
-                timeout=10,
-            )
+            result = run_git_with_lock_retry(["commit", "-m", message], root)
 
             if result.returncode == 0:
                 print_success("檔案變更已提交")
                 return True
+            report_git_failure("提交變更", "git commit", result)
             print_error("提交變更失敗")
             return False
 
@@ -3691,22 +3796,19 @@ def commit_changes(
             if dry_run:
                 print_info("[SYNC] [預覽] 將提交檔案變更", 2)
             else:
-                subprocess.run(
-                    ["git", "add", "docs/todolist.yaml", "CHANGELOG.md"],
-                    cwd=root,
-                    timeout=10,
-                )
+                add_cmd = ["add", "docs/todolist.yaml", "CHANGELOG.md"]
+                add_result = run_git_with_lock_retry(add_cmd, root)
+                if add_result.returncode != 0:
+                    report_git_failure("提交變更", "git " + " ".join(add_cmd), add_result)
+                    print_error("git add 失敗")
+                    return False
 
-                result = subprocess.run(
-                    ["git", "commit", "-m", message],
-                    cwd=root,
-                    capture_output=True,
-                    timeout=10,
-                )
+                result = run_git_with_lock_retry(["commit", "-m", message], root)
 
                 if result.returncode == 0:
                     print_success("檔案變更已提交")
                 else:
+                    report_git_failure("提交變更", "git commit", result)
                     print_error("提交變更失敗")
                     return False
 
@@ -3739,22 +3841,36 @@ def git_merge_and_push(
     )
     # trunk = all-on-main，跳過 feature-branch merge 與分支清理
     use_feature_branch = release_workflow == "feature-branch"
+    completed: List[str] = []
 
     try:
         # 3.1 提交變更
         print_info("[SYNC] 提交所有變更")
         if not commit_changes(version, dry_run, baseline=baseline):
-            return False
+            return abort_release_git_step(
+                "提交變更",
+                completed,
+                "排除上方 stderr 的 git 錯誤後，手動 git add 失敗的檔案並 git commit，"
+                f"再重跑發版；tag {tag_name} 須在該 commit 之後才建立",
+            )
+        completed.append("提交變更")
 
         # 3.2 切換到 main 分支
         print_info("[SHUFFLE] 切換到 main 分支")
         if not dry_run:
-            subprocess.run(
+            result = subprocess.run(
                 ["git", "checkout", "main"],
                 cwd=root,
                 capture_output=True,
+                text=True,
                 timeout=10,
             )
+            if result.returncode != 0:
+                report_git_failure("切換 main", "git checkout main", result)
+                return abort_release_git_step(
+                    "切換 main", completed, "切換到 main 後重跑發版"
+                )
+            completed.append("切換 main")
         else:
             print_info("   [預覽] git checkout main", 2)
 
@@ -3765,13 +3881,18 @@ def git_merge_and_push(
                 ["git", "pull", "origin", "main"],
                 cwd=root,
                 capture_output=True,
+                text=True,
                 timeout=10,
             )
             if result.returncode == 0:
                 print_success("main 分支已更新到最新", )
+                completed.append("拉取 main")
             else:
                 print_error("拉取 main 失敗")
-                return False
+                report_git_failure("拉取 main", "git pull origin main", result)
+                return abort_release_git_step(
+                    "拉取 main", completed, "解決 pull 問題後重跑發版"
+                )
         else:
             print_info("   [預覽] git pull origin main", 2)
 
@@ -3792,38 +3913,42 @@ def git_merge_and_push(
                     ],
                     cwd=root,
                     capture_output=True,
+                    text=True,
                     timeout=10,
                 )
                 if result.returncode == 0:
                     print_success(f"已合併 {feature_branch} 到 main")
+                    completed.append("合併 feature 分支")
                 else:
                     print_error(f"合併 {feature_branch} 失敗")
+                    # 無共同歷史是既有的刻意容忍（首次發版的新分支）；其餘失敗中止
                     if "fatal: refusing to merge unrelated histories" not in result.stderr:
-                        return False
+                        report_git_failure(
+                            "合併 feature 分支", f"git merge {feature_branch}", result
+                        )
+                        return abort_release_git_step(
+                            "合併 feature 分支",
+                            completed,
+                            "解決合併衝突或 git merge --abort 後重跑發版",
+                        )
             else:
                 print_info(f"   [預覽] git merge {feature_branch} --no-ff", 2)
 
         # 3.5 建立 Tag
         print_info(f"[TAG]️ 建立 Tag: {tag_name}")
         if not dry_run:
-            result = subprocess.run(
-                [
-                    "git",
-                    "tag",
-                    "-a",
-                    tag_name,
-                    "-m",
-                    f"Release {tag_name}",
-                ],
-                cwd=root,
-                capture_output=True,
-                timeout=10,
+            result = run_git_with_lock_retry(
+                ["tag", "-a", tag_name, "-m", f"Release {tag_name}"], root
             )
             if result.returncode == 0:
                 print_success(f"Tag 已建立: {tag_name}")
+                completed.append(f"建立 tag {tag_name}")
             else:
-                print_error(f"建立 Tag 失敗")
-                return False
+                print_error("建立 Tag 失敗")
+                report_git_failure("建立 Tag", f"git tag -a {tag_name}", result)
+                return abort_release_git_step(
+                    "建立 Tag", completed, f"確認 {tag_name} 是否已存在後重跑發版"
+                )
         else:
             print_info(f"   [預覽] git tag -a {tag_name}", 2)
 
@@ -3835,26 +3960,37 @@ def git_merge_and_push(
                 ["git", "push", "origin", "main"],
                 cwd=root,
                 capture_output=True,
+                text=True,
                 timeout=10,
             )
             if result.returncode == 0:
                 print_success("main 已推送")
+                completed.append("推送 main")
             else:
                 print_error("推送 main 失敗")
-                return False
+                report_git_failure("推送 main", "git push origin main", result)
+                return abort_release_git_step(
+                    "推送 main",
+                    completed,
+                    f"排除推送問題後 git push origin main，再 git push origin {tag_name}",
+                )
 
             # 推送 tag
             result = subprocess.run(
                 ["git", "push", "origin", tag_name],
                 cwd=root,
                 capture_output=True,
+                text=True,
                 timeout=10,
             )
             if result.returncode == 0:
                 print_success(f"Tag {tag_name} 已推送")
             else:
-                print_error(f"推送 Tag 失敗")
-                return False
+                print_error("推送 Tag 失敗")
+                report_git_failure("推送 Tag", f"git push origin {tag_name}", result)
+                return abort_release_git_step(
+                    "推送 Tag", completed, f"git push origin {tag_name}"
+                )
         else:
             print_info("   [預覽] git push origin main", 2)
             print_info(f"   [預覽] git push origin {tag_name}", 2)
@@ -4036,14 +4172,23 @@ def main():
 
             if ok:
                 print_success("所有檢查通過！該版本已準備好發布")
-                print_info("\n發布指令:", 1)
+                overflow = collect_overflow_tickets(version)
+                # 前移清單非空時 release 會被拒絕，建議必須改為 finish（由 finish 執行前移）
+                subcommand = "finish" if overflow else "release"
+                if overflow:
+                    print_info(
+                        f"\n前移 {len(overflow)} 張 pending Ticket 須先遷出，請用 finish（release 會拒絕）:",
+                        1,
+                    )
+                else:
+                    print_info("\n發布指令:", 1)
                 print_info(
-                    f"uv run .claude/skills/version-release/scripts/version_release.py release",
+                    f"uv run .claude/skills/version-release/scripts/version_release.py {subcommand}",
                     2,
                 )
                 print_info("\n或預覽:", 1)
                 print_info(
-                    f"uv run .claude/skills/version-release/scripts/version_release.py release --dry-run",
+                    f"uv run .claude/skills/version-release/scripts/version_release.py {subcommand} --dry-run",
                     2,
                 )
             else:
@@ -4076,6 +4221,18 @@ def main():
 
             if dry_run:
                 print_warning("預覽模式：不會執行實際的 git 操作\n")
+
+            # release：前移清單非空即拒絕。release 不做前移，照做會把 pending 票
+            # 留在已 completed 的版本下成為懸空票；此為資料正確性判定，--force 不覆蓋。
+            if args.command == "release":
+                overflow = collect_overflow_tickets(version)
+                if overflow:
+                    print_error(
+                        f"版本 {version} 有 {len(overflow)} 張待前移 pending Ticket，release 不執行前移，已中止"
+                    )
+                    print_overflow_migration_plan(overflow)
+                    print_info("請改用 finish（先前移再發布）；--force 不覆蓋此判定", 1)
+                    return 1
 
             # 差集比對基準：finish/release 執行前的 git status 快照。
             # 收尾 commit 的 staged 範圍與 exit 前殘留守衛皆以此為準，
@@ -4162,6 +4319,7 @@ def main():
                 dry_run,
                 baseline=finish_baseline,
                 commit_message=f"docs: 版本 {version} 標記完成並啟用下一版本",
+                extra_paths=resolve_activation_version_paths(finish_root),
             ):
                 print_warning("版本啟用變更提交失敗（請手動確認 todolist.yaml 狀態）")
 

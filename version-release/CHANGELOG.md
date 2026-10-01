@@ -2,6 +2,21 @@
 
 新到舊。版號規則與兩個住址（本檔與 `SKILL.md` frontmatter 的 `metadata.version`）見專案的 skill 同步規範。
 
+**Version**: 2.10.1 - 修復發版提交步驟的 git 寫入失敗只 WARN 就繼續、仍打 tag 並推送：Step 3 的 `git add` 撞並行 session 留下的 index.lock 時，定版內容未進 commit 卻被 tag 指向。`commit_changes` 的 `git add`／`git commit` 與 tag 建立改走 `run_git_with_lock_retry`（鎖競爭以固定間隔退避重試，預設 5 次 x 2 秒，絕不刪鎖），任一步用盡或其他失敗即回傳 False；`git_merge_and_push` 在打 tag 之前中止並以非 0 退出，stderr 列出失敗命令、路徑、git 原始錯誤、已完成步驟與補救指令。盤點同函式其他寫入點：`git checkout main` 失敗原本被完全忽略，現在中止；`pull`／`merge`／`tag`／`push main`／`push tag` 原本已 return False，補上 git stderr 與統一中止訊息；`branch -d`／遠端分支刪除屬 tag 與推送完成後的清理，維持僅警告。rename 舊路徑側 `git add` 的 pathspec 不匹配（路徑已不存在）視為正常，不當失敗。新增 tmp repo 測試涵蓋持續鎖、暫時鎖、無鎖對照、add 失敗而 commit 成功、checkout 失敗。
+**Last Updated**: 2026-10-01
+
+**Version**: 2.10.0 - 本地變更，指向 tarrragon/claude#55：`finish` 的 Commit Version Activation 在裝有 git 層 reference-transaction 守衛的 repo 內不再被擋。`.claude/lib/commit_content_guards.py` 的 `_check_branch_verify` 新增純版本號變動放行：版本檔（`pubspec.yaml`、`package.json`、`pyproject.toml`，含 monorepo 子目錄）且前後差異只有版本欄位那一行時放行並寫 info 日誌（含前後版本值），依賴或其他行的變動（含版本行與依賴行同改）維持 deny，不使用環境變數旁路。新增整合測試，fixture repo 安裝真實 reference-transaction hook 後在 main 上跑啟用與提交。修復根因：守衛對保護分支上的非豁免檔案一律 deny，未區分版本欄位變動與其他變動，而前一版把版本檔併入啟用提交時的測試 fixture 未安裝該 hook，沒測到此路徑。
+**Last Updated**: 2026-09-30
+
+**Version**: 2.9.0 - 本地變更，指向 tarrragon/claude#55：`finish` 的 Commit Version Activation 提交納入本次啟用步驟 bump 的版本檔（Flutter 為 `pubspec.yaml`，含 config 指定的 monorepo 子目錄版本檔）。`commit_changes` 新增 `extra_paths` 參數，路徑須同時在 baseline 差集內才 stage，非版本檔的非 docs 變更仍不納入；新增 `resolve_activation_version_paths` 取得版本檔集合（與 `ensure_version_activated` 同源）。修復根因：stage 範圍只收 `CHANGELOG.md` 與 `docs/`，版本檔殘留於工作區使 exit 前殘留守衛 rc=1。
+**Last Updated**: 2026-09-30
+
+**Version**: 2.8.0 - 本地變更，指向 tarrragon/claude#55：`check` 通過後的結尾建議依前移清單切換（非空建議 `finish` 並說明前移張數，空則維持 `release`）；`release` 遇前移清單非空拒絕執行（exit 1、列清單、提示改用 `finish`），`--force` 不覆蓋此判定（前移是資料正確性，非可略過的警告）。修復根因：`release` 不做前移，照 `check` 舊建議發版會把 pending 票留在已 completed 的版本下成為懸空票。新增 `collect_overflow_tickets`
+**Last Updated**: 2026-09-30
+
+**Version**: 2.7.1 - 本地變更，指向 tarrragon/claude#111：`snapshot_git_status_paths` 改讀 `git status --porcelain -z`（NUL 分隔、不做 quotepath 跳脫，rename 兩側皆納入），修復 CJK 檔名被 git 加引號並八進位跳脫後，差集比對與 `docs/` 前綴判斷失效、CJK 文件被靜默排除在 `finish` 收尾提交之外；`commit_changes` 逐檔 `git add` 補檢查回傳值，失敗時輸出 warning 含路徑與 stderr（原本忽略回傳值，漏檔無任何訊號）
+**Last Updated**: 2026-09-30
+
 **Version**: 2.7.0 - `migrate_overflow_tickets`（`finish` Step 0）改為原樣轉印 `ticket migrate` child process 的 stdout，不再自行以固定字串組「已前移」訊息——上游 `migrate` 對碰撞行為改為 dry-run 判 FAIL 並印改號預覽、正式執行自動改號完成，改號後的實際目標 ID 只存在於 child process 輸出中，沿用固定字串會誤報一個未實際使用的目標 ID。配套 ticket skill 2.42.0（碰撞改號機制）。
 **Last Updated**: 2026-09-24
 
