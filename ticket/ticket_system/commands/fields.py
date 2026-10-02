@@ -22,7 +22,8 @@ import argparse
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ticket_system.lib import ticket_loader
+from ticket_system.lib.list_args import expand_list_arg
+from ticket_system.lib import git_utils, ticket_loader
 from ticket_system.lib.constants import (
     STATUS_PENDING,
     STATUS_IN_PROGRESS,
@@ -220,6 +221,11 @@ def _execute_set_dict_subfields(
 
         ticket_path = resolve_ticket_path(ticket, version, args.ticket_id)
         ticket_loader.save_ticket(ticket, ticket_path)
+        commit_failed = git_utils.commit_ticket_md_reporting(
+            f"set-{field_name}", str(ticket_path), args.ticket_id,
+            "where.files" if field_name == "where" and "files" in applied else field_name,
+            operation=f"set-{field_name}",
+        )
 
     print(format_info(InfoMessages.FIELD_UPDATED, ticket_id=args.ticket_id, field_name=field_name))
     for key, val in applied.items():
@@ -239,25 +245,7 @@ def _execute_set_dict_subfields(
             print(warning)
         for missing in missing_where_paths(get_project_root(), applied["files"]):
             print(format_warning(CreateMessages.WHERE_PATH_NOT_FOUND_WARNING, path=missing))
-
-        # where.files 範圍宣告變更 auto-commit：與 set-acceptance / append-log
-        # 同保護等級，使範圍宣告調整可獨立於其他操作被稽核。
-        import sys as _sys
-        from ticket_system.lib import git_utils
-        try:
-            commit_status = git_utils._auto_commit_ticket_md(
-                str(ticket_path), args.ticket_id, "where.files", operation="set-where",
-            )
-            if commit_status in ("not_git_repo", "git_failed"):
-                _sys.stderr.write(
-                    f"[set-where] auto-commit skipped（{commit_status}，非致命）；"
-                    f"body 已保留 working tree，可手動 git commit 持久化。\n"
-                )
-        except Exception as exc:
-            _sys.stderr.write(
-                f"[set-where] auto-commit 失敗（非致命，body 已保留 working tree）：{exc}\n"
-            )
-    return 0
+    return git_utils.EXIT_AUTO_COMMIT_FAILED if commit_failed else 0
 
 
 def execute_get_field(
@@ -397,6 +385,15 @@ def execute_set_field(
         ticket_path = resolve_ticket_path(ticket, version, args.ticket_id)
         ticket_loader.save_ticket(ticket, ticket_path)
 
+        # 所有 set-* 欄位寫入預設自動提交：未提交的票檔會在後續 merge／restore／
+        # 他方裸 commit 時遺失或被混入。where 路徑型輸入的範圍宣告變更以
+        # where.files 為 section，使其可獨立於其他操作被稽核。
+        commit_failed = git_utils.commit_ticket_md_reporting(
+            f"set-{actual_field_name}", str(ticket_path), args.ticket_id,
+            "where.files" if synced_files is not None else actual_field_name,
+            operation=f"set-{actual_field_name}",
+        )
+
     print(format_info(InfoMessages.FIELD_UPDATED, ticket_id=args.ticket_id, field_name=actual_field_name))
     if synced_files is None:
         print(f"   新值: {new_value}")
@@ -427,26 +424,7 @@ def execute_set_field(
         # where.files 路徑存在性 WARNING：set-where 路徑型輸入同上，僅警告不阻擋。
         for missing in missing_where_paths(get_project_root(), synced_files):
             print(format_warning(CreateMessages.WHERE_PATH_NOT_FOUND_WARNING, path=missing))
-
-        # where.files 範圍宣告變更 auto-commit：與 --files 子欄位路徑
-        # （_execute_set_dict_subfields）同保護等級，使範圍宣告調整可獨立於
-        # 其他操作被稽核。
-        import sys as _sys
-        from ticket_system.lib import git_utils
-        try:
-            commit_status = git_utils._auto_commit_ticket_md(
-                str(ticket_path), args.ticket_id, "where.files", operation="set-where",
-            )
-            if commit_status in ("not_git_repo", "git_failed"):
-                _sys.stderr.write(
-                    f"[set-where] auto-commit skipped（{commit_status}，非致命）；"
-                    f"body 已保留 working tree，可手動 git commit 持久化。\n"
-                )
-        except Exception as exc:
-            _sys.stderr.write(
-                f"[set-where] auto-commit 失敗（非致命，body 已保留 working tree）：{exc}\n"
-            )
-    return 0
+    return git_utils.EXIT_AUTO_COMMIT_FAILED if commit_failed else 0
 
 
 # ===========================
@@ -536,7 +514,8 @@ def execute_set_where(args: argparse.Namespace, version: str) -> int:
     仍優先於 value 推斷（不變）。
     """
     layer = _get_str_arg(args, "layer")
-    files_raw = _get_str_arg(args, "files")
+    files_arg = getattr(args, "files", None)
+    files_raw = files_arg if isinstance(files_arg, (str, list)) else None
     if layer is None and files_raw is None:
         if getattr(args, "value", None) is None:
             print(format_error(ErrorMessages.MISSING_FIELD_VALUE, ticket_id=args.ticket_id, field_name="where"))
@@ -547,7 +526,7 @@ def execute_set_where(args: argparse.Namespace, version: str) -> int:
     if layer is not None:
         subfields["layer"] = layer
     if files_raw is not None:
-        subfields["files"] = _parse_comma_list(files_raw)
+        subfields["files"] = expand_list_arg(files_raw)
     elif getattr(args, "value", None) is not None:
         path_entries = _parse_where_path_entries(args.value)
         if path_entries is not None:
@@ -630,29 +609,17 @@ def execute_set_scope_blocker(args: argparse.Namespace, version: str) -> int:
         ticket_path = resolve_ticket_path(ticket, version, args.ticket_id)
         ticket_loader.save_ticket(ticket, ticket_path)
 
-        import sys as _sys
-        from ticket_system.lib import git_utils
-        try:
-            commit_status = git_utils._auto_commit_ticket_md(
-                str(ticket_path), args.ticket_id, "scope_blocker",
-                operation="set-scope-blocker",
-            )
-            if commit_status in ("not_git_repo", "git_failed"):
-                _sys.stderr.write(
-                    f"[set-scope-blocker] auto-commit skipped（{commit_status}，非致命）；"
-                    f"body 已保留 working tree，可手動 git commit 持久化。\n"
-                )
-        except Exception as exc:
-            _sys.stderr.write(
-                f"[set-scope-blocker] auto-commit 失敗（非致命，body 已保留 working tree）：{exc}\n"
-            )
+        commit_failed = git_utils.commit_ticket_md_reporting(
+            "set-scope-blocker", str(ticket_path), args.ticket_id, "scope_blocker",
+            operation="set-scope-blocker",
+        )
 
     print(format_info(InfoMessages.FIELD_UPDATED, ticket_id=args.ticket_id, field_name="scope_blocker"))
     if clear:
         print("   scope_blocker 已清除")
     else:
         print(f"   scope_blocker: {ticket['scope_blocker']}")
-    return 0
+    return git_utils.EXIT_AUTO_COMMIT_FAILED if commit_failed else 0
 
 
 def execute_add_acceptance(args: argparse.Namespace, version: str) -> int:
@@ -707,28 +674,16 @@ def execute_add_acceptance(args: argparse.Namespace, version: str) -> int:
         ticket_path = resolve_ticket_path(ticket, version, args.ticket_id)
         ticket_loader.save_ticket(ticket, ticket_path)
 
-        # 與 set-acceptance 同保護等級的 auto-commit（path-limited + graceful
-        # degrade）。
-        from ticket_system.lib import git_utils
-        try:
-            commit_status = git_utils._auto_commit_ticket_md(
-                str(ticket_path), args.ticket_id, "Acceptance Criteria",
-                operation="add-acceptance",
-            )
-            if commit_status in ("not_git_repo", "git_failed"):
-                _sys.stderr.write(
-                    f"[add-acceptance] auto-commit skipped（{commit_status}，非致命）；"
-                    f"body 已保留 working tree，可手動 git commit 持久化。\n"
-                )
-        except Exception as exc:
-            _sys.stderr.write(
-                f"[add-acceptance] auto-commit 失敗（非致命，body 已保留 working tree）：{exc}\n"
-            )
+        # 與 set-acceptance 同保護等級的 auto-commit（path-limited）。
+        commit_failed = git_utils.commit_ticket_md_reporting(
+            "add-acceptance", str(ticket_path), args.ticket_id, "Acceptance Criteria",
+            operation="add-acceptance",
+        )
 
     print(format_info(InfoMessages.FIELD_UPDATED, ticket_id=args.ticket_id, field_name="acceptance"))
     print(f"   新增: {new_item}")
     print(f"   目前共 {len(acceptance)} 項")
-    return 0
+    return git_utils.EXIT_AUTO_COMMIT_FAILED if commit_failed else 0
 
 
 def execute_remove_acceptance(args: argparse.Namespace, version: str) -> int:
@@ -754,11 +709,52 @@ def execute_remove_acceptance(args: argparse.Namespace, version: str) -> int:
 
         ticket_path = resolve_ticket_path(ticket, version, args.ticket_id)
         ticket_loader.save_ticket(ticket, ticket_path)
+        commit_failed = git_utils.commit_ticket_md_reporting(
+            "remove-acceptance", str(ticket_path), args.ticket_id, "Acceptance Criteria",
+            operation="remove-acceptance",
+        )
 
     print(format_info(InfoMessages.FIELD_UPDATED, ticket_id=args.ticket_id, field_name="acceptance"))
     print(f"   移除: {removed}")
     print(f"   剩餘 {len(acceptance)} 項")
-    return 0
+    return git_utils.EXIT_AUTO_COMMIT_FAILED if commit_failed else 0
+
+
+def _set_reverse_source_if_unset(
+    target_ticket_id: str, parent_ticket_id: str
+) -> Optional[str]:
+    """target_ticket 的 source_ticket 為空時寫入 parent_ticket_id（remove 的對稱操作）。
+
+    Best-effort：target 不存在、版本無法解析、已有 source_ticket（無論是否為
+    parent）一律不改，已有不同值時由呼叫端的 `check_reverse_source_conflict`
+    發 WARNING。只寫檔不 commit，commit 由呼叫端合併為單一提交。
+
+    Returns:
+        已寫入時回傳 target ticket 檔路徑；否則 None。
+    """
+    import sys
+
+    from ticket_system.lib.ticket_validator import extract_version_from_ticket_id
+
+    target_version = extract_version_from_ticket_id(target_ticket_id)
+    if target_version is None:
+        return None
+
+    target_path = Path(get_ticket_path(target_version, target_ticket_id))
+    with file_lock(target_path):
+        target_ticket = ticket_loader.load_ticket(target_version, target_ticket_id)
+        if not target_ticket or target_ticket.get("source_ticket"):
+            return None
+        target_ticket["source_ticket"] = parent_ticket_id
+        actual_path = Path(target_ticket.get("_path", target_path))
+        try:
+            ticket_loader.save_ticket(target_ticket, actual_path)
+        except (IOError, OSError) as exc:
+            sys.stderr.write(
+                f"[add-spawned] 反向 source_ticket 寫入失敗 {target_ticket_id}: {exc}\n"
+            )
+            return None
+    return str(actual_path)
 
 
 def execute_add_spawned(args: argparse.Namespace, version: str) -> int:
@@ -797,39 +793,43 @@ def execute_add_spawned(args: argparse.Namespace, version: str) -> int:
         ticket_path = resolve_ticket_path(ticket, version, args.ticket_id)
         ticket_loader.save_ticket(ticket, ticket_path)
 
-        # 與 add-acceptance 同保護等級的 auto-commit（path-limited + graceful
-        # degrade）：spawned_tickets 是 ticket 血緣欄位，寫入後若停在未 commit
-        # 的 working tree，可能被 git checkout/reset/stash 覆蓋回舊版本。
-        from ticket_system.lib import git_utils
-        try:
-            commit_status = git_utils._auto_commit_ticket_md(
-                str(ticket_path), args.ticket_id, "spawned_tickets",
-                operation="add-spawned",
-            )
-            if commit_status in ("not_git_repo", "git_failed"):
-                _sys.stderr.write(
-                    f"[add-spawned] auto-commit skipped（{commit_status}，非致命）；"
-                    f"body 已保留 working tree，可手動 git commit 持久化。\n"
-                )
-        except Exception as exc:
-            _sys.stderr.write(
-                f"[add-spawned] auto-commit 失敗（非致命，body 已保留 working tree）：{exc}\n"
-            )
+    # 反向欄位寫入在本票 file_lock 釋放後進行（各目標票獨立上鎖，不巢狀持有，
+    # 理由同 execute_remove_spawned）。本票與被寫入的目標票以單一 commit 提交
+    # （commit_ticket_mds_reporting）：spawned_tickets 是血緣欄位，寫入後若停在
+    # 未 commit 的 working tree，可能被 git checkout/reset/stash 覆蓋回舊版本。
+    commit_paths = [str(ticket_path)]
+    reverse_written: list[str] = []
+    for value in added:
+        target_path = _set_reverse_source_if_unset(value, args.ticket_id)
+        if target_path:
+            reverse_written.append(value)
+            commit_paths.append(target_path)
+    commit_failed = git_utils.commit_ticket_mds_reporting(
+        "add-spawned", commit_paths, args.ticket_id, "spawned_tickets",
+        operation="add-spawned",
+    )
 
     print(format_info(InfoMessages.FIELD_UPDATED, ticket_id=args.ticket_id, field_name="spawned_tickets"))
     if added:
         print(f"   新增: {', '.join(added)}")
+    if reverse_written:
+        print(f"   已同步寫入反向欄位 source_ticket: {', '.join(reverse_written)}")
     if skipped:
         print(f"   已存在略過: {', '.join(skipped)}")
+    # target 已有不同 source_ticket 時保留原值，只提示
     for value in added:
         warning = check_reverse_source_conflict(value, args.ticket_id)
         if warning:
             print(format_warning(warning), file=_sys.stderr)
     print(f"   目前共 {len(spawned)} 項")
-    return 0
+    return git_utils.EXIT_AUTO_COMMIT_FAILED if commit_failed else 0
 
 
-def _clear_reverse_source_if_matches(target_ticket_id: str, parent_ticket_id: str) -> bool:
+def _clear_reverse_source_if_matches(
+    target_ticket_id: str,
+    parent_ticket_id: str,
+    commit_failures: Optional[list] = None,
+) -> bool:
     """若 target_ticket 的 source_ticket 回指 parent_ticket，清除該反向欄位。
 
     spawned_tickets 的反向欄位是目標票的 source_ticket（見
@@ -849,6 +849,8 @@ def _clear_reverse_source_if_matches(target_ticket_id: str, parent_ticket_id: st
     Args:
         target_ticket_id: 被移除的 spawned ticket ID。
         parent_ticket_id: 本次執行 remove-spawned 的 ticket ID。
+        commit_failures: 選用的收集清單；反向欄位的 auto-commit 最終失敗時
+            追加 target_ticket_id，供呼叫端決定 exit code。
 
     Returns:
         bool: True 表示已清除並寫入；False 表示無需清除或寫入失敗。
@@ -874,26 +876,13 @@ def _clear_reverse_source_if_matches(target_ticket_id: str, parent_ticket_id: st
             return False
 
         # 同保護等級 auto-commit（見 execute_add_spawned 同一段理由）；
-        # 失敗僅記錄不影響回傳值——反向欄位已寫入 working tree，本函式
-        # 的回傳語意是「是否已清除」而非「是否已 commit」。
-        from ticket_system.lib import git_utils
-        try:
-            commit_status = git_utils._auto_commit_ticket_md(
-                str(actual_path), target_ticket_id, "source_ticket",
-                operation="remove-spawned",
-            )
-            if commit_status in ("not_git_repo", "git_failed"):
-                import sys as _sys
-                _sys.stderr.write(
-                    f"[remove-spawned] 反向欄位 auto-commit skipped（{commit_status}，"
-                    f"非致命）；body 已保留 working tree，可手動 git commit 持久化。\n"
-                )
-        except Exception as exc:
-            import sys as _sys
-            _sys.stderr.write(
-                f"[remove-spawned] 反向欄位 auto-commit 失敗（非致命，"
-                f"body 已保留 working tree）：{exc}\n"
-            )
+        # 回傳值語意仍是「是否已清除」而非「是否已 commit」，提交最終失敗
+        # 經 commit_failures 帶回，由呼叫端轉為 exit code。
+        if git_utils.commit_ticket_md_reporting(
+            "remove-spawned", str(actual_path), target_ticket_id, "source_ticket",
+            operation="remove-spawned",
+        ) and commit_failures is not None:
+            commit_failures.append(target_ticket_id)
     return True
 
 
@@ -937,29 +926,22 @@ def execute_remove_spawned(args: argparse.Namespace, version: str) -> int:
 
         # 與 add-spawned／add-acceptance 同保護等級的 auto-commit（見
         # execute_add_spawned 同一段註解的理由）。
-        from ticket_system.lib import git_utils
-        try:
-            commit_status = git_utils._auto_commit_ticket_md(
-                str(ticket_path), args.ticket_id, "spawned_tickets",
-                operation="remove-spawned",
-            )
-            if commit_status in ("not_git_repo", "git_failed"):
-                _sys.stderr.write(
-                    f"[remove-spawned] auto-commit skipped（{commit_status}，非致命）；"
-                    f"body 已保留 working tree，可手動 git commit 持久化。\n"
-                )
-        except Exception as exc:
-            _sys.stderr.write(
-                f"[remove-spawned] auto-commit 失敗（非致命，body 已保留 working tree）：{exc}\n"
-            )
+        commit_failed = git_utils.commit_ticket_md_reporting(
+            "remove-spawned", str(ticket_path), args.ticket_id, "spawned_tickets",
+            operation="remove-spawned",
+        )
 
     # 反向欄位清理發生在本票的 file_lock 釋放後：每個目標票各自獨立上鎖，
     # 不與本票鎖巢狀持有，避免鎖序交錯（目標票路徑與本票路徑不同檔案，
     # 但巢狀持有仍是不必要的鎖範圍擴張）。
     reverse_cleared: list[str] = []
+    reverse_commit_failures: list[str] = []
     for target_id in removed:
-        if _clear_reverse_source_if_matches(target_id, args.ticket_id):
+        if _clear_reverse_source_if_matches(
+            target_id, args.ticket_id, reverse_commit_failures
+        ):
             reverse_cleared.append(target_id)
+    commit_failed = commit_failed or bool(reverse_commit_failures)
 
     print(format_info(InfoMessages.FIELD_UPDATED, ticket_id=args.ticket_id, field_name="spawned_tickets"))
     if removed:
@@ -972,7 +954,7 @@ def execute_remove_spawned(args: argparse.Namespace, version: str) -> int:
 
     if not removed:
         return 1
-    return 0
+    return git_utils.EXIT_AUTO_COMMIT_FAILED if commit_failed else 0
 
 
 def execute_set_decision_tree(args: argparse.Namespace, version: str) -> int:
@@ -996,8 +978,12 @@ def execute_set_decision_tree(args: argparse.Namespace, version: str) -> int:
 
         ticket_path = resolve_ticket_path(ticket, version, args.ticket_id)
         ticket_loader.save_ticket(ticket, ticket_path)
+        commit_failed = git_utils.commit_ticket_md_reporting(
+            "set-decision-tree", str(ticket_path), args.ticket_id, "decision_tree_path",
+            operation="set-decision-tree",
+        )
 
     print(format_info(InfoMessages.FIELD_UPDATED, ticket_id=args.ticket_id, field_name="decision_tree_path"))
     for key, val in dt.items():
         print(f"   {key}: {val}")
-    return 0
+    return git_utils.EXIT_AUTO_COMMIT_FAILED if commit_failed else 0

@@ -25,6 +25,11 @@ import subprocess
 
 import pytest
 
+# testpaths 覆蓋警告外掛：命令列路徑未涵蓋全部 testpaths 時於終端摘要警告
+from testpaths_coverage_warning import (  # noqa: F401
+    pytest_collection_modifyitems,
+    pytest_terminal_summary,
+)
 from ticket_system.lib.paths import (
     reset_project_root_cache,
     reset_ticket_state_root_cache,
@@ -160,3 +165,13 @@ def seeded_repo_root(tmp_path_factory, monkeypatch):
     )
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(root))
     return root
+
+
+@pytest.fixture(autouse=True)
+def _isolate_commit_retry_log(tmp_path_factory, monkeypatch):
+    """提交重試日誌導向 tmp，避免測試的 mock 值污染真實並行失敗率日誌。"""
+    from ticket_system.lib import git_utils
+
+    monkeypatch.setattr(
+        git_utils, "_RETRY_LOG_DIR", str(tmp_path_factory.mktemp("retry-log"))
+    )

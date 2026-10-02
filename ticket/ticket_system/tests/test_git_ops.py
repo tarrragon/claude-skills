@@ -74,6 +74,10 @@ def _fake_run_factory(calls, extra_changed=None, same_tree=False, repo_root=None
             requested = args[idx + 1 :]
             lines = [f"100644 blob fakeblobsha\t{p}\0" for p in requested]
             return MagicMock(returncode=0, stdout="".join(lines), stderr="")
+        if args[:2] == ["git", "ls-files"]:
+            idx = args.index("--")
+            lines = [f"100644 fakeblobsha 0\t{p}\0" for p in args[idx + 1 :]]
+            return MagicMock(returncode=0, stdout="".join(lines), stderr="")
         if args[:2] == ["git", "update-index"]:
             return MagicMock(returncode=0, stdout="", stderr="")
         raise AssertionError(f"未預期的 git 呼叫: {args}")
@@ -234,7 +238,9 @@ class TestCommitFilesIsolated:
 
         assert result["status"] == "committed"
         ls_tree_calls = [c for c in calls if c[:2] == ["git", "ls-tree"]]
-        assert ls_tree_calls == [["git", "ls-tree", "-z", "tree_sha", "--", _TARGET]]
+        # 內容取自當下 HEAD；本次 tree 與 parent 僅用於判定共用 index 是否含他方 stage
+        assert ["git", "ls-tree", "-z", "HEAD", "--", _TARGET] in ls_tree_calls
+        assert ["git", "ls-tree", "-z", "tree_sha", "--", _TARGET] in ls_tree_calls
         index_info_calls = [
             c for c in calls if c[:2] == ["git", "update-index"] and "--index-info" in c
         ]
@@ -285,7 +291,8 @@ class TestCommitFilesIsolated:
 
         def fake_run(args, **kwargs):
             calls.append(args)
-            if args[:2] == ["git", "ls-tree"]:
+            # 刪除情境：parent 版本仍有此檔（共用 index entry 等於它），HEAD 與本次 tree 已無
+            if args[:2] == ["git", "ls-tree"] and args[3] != "old_head_sha":
                 return MagicMock(returncode=0, stdout="", stderr="")
             return _fake_run_factory([])(args, **kwargs)
 
@@ -582,3 +589,584 @@ class TestRefLockRetryAndStaleDiagnosis:
         assert released.is_set()
         assert result["status"] == "committed", f"活鎖釋放後應重試成功：{result['error']}"
         assert _run_git(repo, "log", "-1", "--pretty=%s").stdout.strip() == "msg"
+
+
+class TestSharedIndexSyncAfterCommit:
+    """0.4.0-W1-067：提交後共用 index 同步不得留下過期 entry。
+
+    路徑 B（同步順序顛倒）：兩次 CAS 提交同一檔案，較早提交的同步最後才執行，
+    舊實作把「較舊 tree 的 blob」寫回，共用 index entry 比 HEAD 舊。
+    路徑 A（同步遇鎖用盡）：重試用盡時舊實作只印無路徑的 WARNING。
+    E1 對照：每個測項都有「無故障時 entry == HEAD」的對照，故障才是差異。
+    """
+
+    _REL = "ticket.md"
+
+    @pytest.fixture
+    def repo(self, tmp_path):
+        _run_git(tmp_path, "init", "-q", "-b", "main")
+        _run_git(tmp_path, "config", "user.email", "t@example.com")
+        _run_git(tmp_path, "config", "user.name", "t")
+        (tmp_path / self._REL).write_text("v1\n")
+        _run_git(tmp_path, "add", self._REL)
+        _run_git(tmp_path, "commit", "-q", "-m", "init")
+        return tmp_path
+
+    def _index_blob(self, repo: Path) -> str:
+        return _run_git(repo, "rev-parse", f":{self._REL}").stdout.strip()
+
+    def _head_blob(self, repo: Path) -> str:
+        return _run_git(repo, "rev-parse", f"HEAD:{self._REL}").stdout.strip()
+
+    def _commit_deferring_sync(self, repo: Path, content: str) -> dict:
+        """提交但攔截同步呼叫，回傳其參數，供測試決定同步時序。"""
+        (repo / self._REL).write_text(content)
+        captured: dict = {}
+
+        def capture(paths, tree_sha, cwd, *args, **kwargs):
+            captured.update(paths=paths, tree_sha=tree_sha, cwd=cwd, args=args, kwargs=kwargs)
+
+        with patch.object(git_ops, "_sync_shared_index_after_commit", side_effect=capture):
+            result = git_ops.commit_files_isolated([str(repo / self._REL)], "m", cwd=str(repo))
+        assert result["status"] == "committed"
+        return captured
+
+    def _run_deferred_sync(self, captured: dict) -> None:
+        git_ops._sync_shared_index_after_commit(
+            captured["paths"], captured["tree_sha"], captured["cwd"],
+            *captured["args"], **captured["kwargs"],
+        )
+
+    def test_in_order_sync_matches_head_control(self, repo):
+        """對照：同步順序正常時 entry == HEAD。"""
+        first = self._commit_deferring_sync(repo, "v2\n")
+        self._run_deferred_sync(first)
+        assert self._index_blob(repo) == self._head_blob(repo)
+
+    def test_reversed_sync_order_leaves_entry_equal_to_head(self, repo):
+        """路徑 B：較早提交的同步最後才執行，entry 仍須等於 HEAD。"""
+        first = self._commit_deferring_sync(repo, "v2\n")
+        second = self._commit_deferring_sync(repo, "v3\n")
+        self._run_deferred_sync(second)
+        self._run_deferred_sync(first)  # 晚到的舊同步
+        assert self._index_blob(repo) == self._head_blob(repo)
+
+    def test_foreign_staged_content_is_not_overwritten(self, repo, capsys):
+        """他方另外 stage 的內容（既非 parent 版也非本次 tree 版）不被覆寫，並印 WARNING。"""
+        first = self._commit_deferring_sync(repo, "v2\n")
+        (repo / self._REL).write_text("foreign\n")
+        _run_git(repo, "add", self._REL)
+        foreign_blob = self._index_blob(repo)
+        self._run_deferred_sync(first)
+        assert self._index_blob(repo) == foreign_blob
+        err = capsys.readouterr().err
+        assert "[WARNING]" in err and self._REL in err
+
+    def test_final_sync_failure_warning_lists_path_and_remedy(self, repo, capsys):
+        """路徑 A：update-index 遇鎖重試用盡，WARNING 列出路徑與補救指令。"""
+        first = self._commit_deferring_sync(repo, "v2\n")
+        real = git_ops._run_git
+
+        def lock_on_update_index(args, *a, **kw):
+            if args[:2] == ["git", "update-index"]:
+                return False, "", "fatal: Unable to create '/r/.git/index.lock': File exists."
+            return real(args, *a, **kw)
+
+        with patch.object(git_ops, "_run_git", side_effect=lock_on_update_index), patch.object(
+            git_ops.time, "sleep", return_value=None
+        ):
+            self._run_deferred_sync(first)
+        err = capsys.readouterr().err
+        assert "[WARNING]" in err
+        assert f"git restore --staged -- {self._REL}" in err
+
+    def _three_commits(self, repo: Path):
+        return [self._commit_deferring_sync(repo, c) for c in ("v2\n", "v3\n", "v4\n")]
+
+    def test_frozen_own_stale_entry_recovers_on_next_sync(self, repo):
+        """缺陷 1：第一次同步失敗（未執行）後 entry 停在 v1，第二次同步須寫成 HEAD。"""
+        _first, second, _third = self._three_commits(repo)
+        assert self._index_blob(repo) != self._head_blob(repo)
+        self._run_deferred_sync(second)
+        assert self._index_blob(repo) == self._head_blob(repo)
+
+    def test_never_committed_blob_still_treated_as_foreign(self, repo, capsys):
+        """E2 對照：entry 是從未提交過的 blob 時，即使有歷史比對仍不覆寫。"""
+        _first, second, _third = self._three_commits(repo)
+        (repo / self._REL).write_text("foreign\n")
+        _run_git(repo, "add", self._REL)
+        foreign_blob = self._index_blob(repo)
+        self._run_deferred_sync(second)
+        assert self._index_blob(repo) == foreign_blob
+        assert "[WARNING]" in capsys.readouterr().err
+
+    def test_history_lookback_is_bounded(self, repo, monkeypatch):
+        """歷史比對有上限：己方舊版本超出回溯範圍即視為他方（保守不覆寫）。"""
+        monkeypatch.setattr(git_ops, "_OWN_HISTORY_LOOKBACK", 1, raising=False)
+        _first, second, _third = self._three_commits(repo)
+        frozen = self._index_blob(repo)
+        self._run_deferred_sync(second)
+        assert self._index_blob(repo) == frozen
+
+    def test_update_index_never_killed_by_timeout_leaves_no_lock(self, repo, monkeypatch):
+        """缺陷 2：持 index.lock 的 update-index 若被 timeout 殺掉會殘留鎖。
+
+        以 subprocess.run 包裝模擬「持鎖耗時超過 _GIT_TIMEOUT」：有 timeout 時，
+        依真實行為在鎖仍在時拋 TimeoutExpired（殘留鎖）；無 timeout 才正常釋放。
+        update-index 無 hook 可掛，故以此模擬持鎖耗時。
+        """
+        first = self._commit_deferring_sync(repo, "v2\n")
+        lock = repo / ".git" / "index.lock"
+        real_run = subprocess.run
+
+        def slow_run(args, *a, **kw):
+            if list(args[:2]) == ["git", "update-index"]:
+                lock.write_text("")
+                timeout = kw.get("timeout")
+                if timeout is not None:  # 持鎖耗時視為超過任何有限 timeout
+                    raise subprocess.TimeoutExpired(args, timeout)
+                lock.unlink()
+            return real_run(args, *a, **kw)
+
+        monkeypatch.setattr(git_ops.subprocess, "run", slow_run)
+        self._run_deferred_sync(first)
+        assert not lock.exists()
+        assert self._index_blob(repo) == self._head_blob(repo)
+
+
+class TestStageAppendedBlobProjection:
+    """append-only 檔依工作區順序投影：HEAD 各行 + 本次各行，multiset 配對。"""
+
+    @pytest.fixture
+    def repo(self, tmp_path):
+        _run_git(tmp_path, "init", "-q")
+        _run_git(tmp_path, "config", "user.email", "t@example.com")
+        _run_git(tmp_path, "config", "user.name", "t")
+        (tmp_path / "log.txt").write_text("base\n", encoding="utf-8")
+        (tmp_path / "wa.md").write_text("0\n", encoding="utf-8")
+        (tmp_path / "wb.md").write_text("0\n", encoding="utf-8")
+        _run_git(tmp_path, "add", "-A")
+        _run_git(tmp_path, "commit", "-q", "-m", "init")
+        return tmp_path
+
+    @staticmethod
+    def _append(repo, line):
+        with open(repo / "log.txt", "a", encoding="utf-8") as fh:
+            fh.write(line)
+
+    @staticmethod
+    def _commit(repo, writer, line):
+        ticket = repo / f"w{writer.lower()}.md"
+        ticket.write_text(ticket.read_text(encoding="utf-8") + "x\n", encoding="utf-8")
+        result = git_ops.commit_files_isolated(
+            [str(ticket)], f"commit {writer}", cwd=str(repo),
+            append_lines={str(repo / "log.txt"): line},
+        )
+        assert result["status"] == "committed", result
+
+    @staticmethod
+    def _head_text(repo):
+        return _run_git(repo, "show", "HEAD:log.txt").stdout
+
+    @pytest.mark.parametrize("order", [
+        ("aA", "aB", "cA", "cB"),
+        ("aA", "aB", "cB", "cA"),
+        ("aA", "cA", "aB", "cB"),
+        ("aB", "aA", "cA", "cB"),
+        ("aB", "aA", "cB", "cA"),
+        ("aB", "cB", "aA", "cA"),
+    ])
+    def test_two_writers_interleaving_clean(self, repo, order):
+        lines = {"A": "lineA\n", "B": "lineB\n"}
+        for step in order:
+            if step[0] == "a":
+                self._append(repo, lines[step[1]])
+            else:
+                self._commit(repo, step[1], lines[step[1]])
+        status = _run_git(repo, "status", "--porcelain", "--", "log.txt").stdout
+        assert status.strip() == ""
+
+    def test_uncommitted_foreign_line_in_middle_not_absorbed(self, repo):
+        self._append(repo, "lineA\n")
+        self._append(repo, "foreign\n")
+        self._append(repo, "lineB\n")
+        self._commit(repo, "A", "lineA\n")
+        assert self._head_text(repo) == "base\nlineA\n"
+        self._commit(repo, "B", "lineB\n")
+        assert self._head_text(repo) == "base\nlineA\nlineB\n"
+
+    def test_duplicate_lines_multiset(self, repo):
+        for _ in range(3):
+            self._append(repo, "dup\n")
+        self._commit(repo, "A", "dup\n")
+        assert self._head_text(repo) == "base\ndup\n"
+        self._commit(repo, "B", "dup\n")
+        assert self._head_text(repo) == "base\ndup\ndup\n"
+
+    def test_missing_workfile_falls_back(self, repo):
+        (repo / "log.txt").unlink()
+        self._commit(repo, "A", "lineA\n")
+        assert self._head_text(repo) == "base\nlineA\n"
+
+    def test_non_superset_falls_back(self, repo):
+        (repo / "log.txt").write_text("other\n", encoding="utf-8")
+        self._commit(repo, "A", "lineA\n")
+        assert self._head_text(repo) == "base\nlineA\n"
+
+
+class TestAppendReplayFallback:
+    """非超集時，呼叫端提供的重放方式在 HEAD 版本上插入（E5-D）。"""
+
+    @pytest.fixture
+    def repo(self, tmp_path):
+        _run_git(tmp_path, "init", "-q")
+        _run_git(tmp_path, "config", "user.email", "t@example.com")
+        _run_git(tmp_path, "config", "user.name", "t")
+        (tmp_path / "log.txt").write_text("h1\nh2\nfooter\n", encoding="utf-8")
+        (tmp_path / "t.md").write_text("0\n", encoding="utf-8")
+        _run_git(tmp_path, "add", "-A")
+        _run_git(tmp_path, "commit", "-q", "-m", "init")
+        return tmp_path
+
+    @staticmethod
+    def _insert_before_footer(base, text):
+        lines = base.splitlines(keepends=True)
+        return "".join(lines[:-1]) + text + lines[-1]
+
+    @staticmethod
+    def _commit(repo, value):
+        (repo / "t.md").write_text("1\n", encoding="utf-8")
+        result = git_ops.commit_files_isolated(
+            [str(repo / "t.md")], "c", cwd=str(repo),
+            append_lines={str(repo / "log.txt"): value},
+        )
+        assert result["status"] == "committed", result
+
+    @staticmethod
+    def _head(repo):
+        return _run_git(repo, "show", "HEAD:log.txt").stdout
+
+    def test_non_superset_replays_on_head(self, repo):
+        (repo / "log.txt").write_text("H1\nh2\nfooter\nnew\n", encoding="utf-8")
+        self._commit(repo, git_ops.AppendSpec("new\n", self._insert_before_footer))
+        assert self._head(repo) == "h1\nh2\nnew\nfooter\n"
+
+    def test_non_superset_without_replay_keeps_tail_fallback(self, repo):
+        (repo / "log.txt").write_text("H1\nh2\nfooter\nnew\n", encoding="utf-8")
+        self._commit(repo, "new\n")
+        assert self._head(repo) == "h1\nh2\nfooter\nnew\n"
+
+    def test_superset_ignores_replay_and_drops_foreign(self, repo):
+        (repo / "log.txt").write_text(
+            "h1\nh2\nnew\nfooter\nforeign\n", encoding="utf-8")
+        self._commit(repo, git_ops.AppendSpec("new\n", self._insert_before_footer))
+        assert self._head(repo) == "h1\nh2\nnew\nfooter\n"
+
+    def test_non_superset_foreign_edit_not_absorbed(self, repo):
+        (repo / "log.txt").write_text("H1\nh2\nfooter\nforeign\n", encoding="utf-8")
+        self._commit(repo, git_ops.AppendSpec("new\n", self._insert_before_footer))
+        head = self._head(repo)
+        assert "H1" not in head and "foreign" not in head
+
+
+_BODY = "".join(f"line {i} of the shared body\n" for i in range(30))
+
+
+class TestScopeCheckRenameAndDirectory:
+    """範圍自檢不受 diff.renames 影響；目錄路徑明確拒絕。"""
+
+    @pytest.fixture
+    def repo(self, tmp_path):
+        _run_git(tmp_path, "init", "-q")
+        _run_git(tmp_path, "config", "user.email", "t@example.com")
+        _run_git(tmp_path, "config", "user.name", "t")
+        _run_git(tmp_path, "config", "diff.renames", "true")
+        (tmp_path / "old.md").write_text(_BODY, encoding="utf-8")
+        (tmp_path / "other.md").write_text("other\n", encoding="utf-8")
+        (tmp_path / "d1").mkdir()
+        (tmp_path / "d1" / "f.md").write_text(_BODY + "d1\n", encoding="utf-8")
+        _run_git(tmp_path, "add", "-A")
+        _run_git(tmp_path, "commit", "-q", "-m", "init")
+        return tmp_path
+
+    @staticmethod
+    def _porcelain(repo):
+        return _run_git(repo, "status", "--porcelain").stdout
+
+    def test_delete_old_add_new(self, repo):
+        (repo / "old.md").rename(repo / "new.md")
+        r = git_ops.commit_files_isolated(["new.md", "old.md"], "mv", cwd=str(repo))
+        assert r["status"] == "committed", r
+        assert self._porcelain(repo) == ""
+
+    def test_rename_with_edit_plus_other_file(self, repo):
+        (repo / "old.md").rename(repo / "new.md")
+        with open(repo / "new.md", "a", encoding="utf-8") as fh:
+            fh.write("extra\n")
+        (repo / "other.md").write_text("other2\n", encoding="utf-8")
+        r = git_ops.commit_files_isolated(
+            ["new.md", "old.md", "other.md"], "mv", cwd=str(repo))
+        assert r["status"] == "committed", r
+        assert self._porcelain(repo) == ""
+
+    def test_cross_directory_per_file(self, repo):
+        (repo / "d2").mkdir()
+        (repo / "d1" / "f.md").rename(repo / "d2" / "f.md")
+        r = git_ops.commit_files_isolated(
+            ["d2/f.md", "d1/f.md"], "mv", cwd=str(repo))
+        assert r["status"] == "committed", r
+        assert self._porcelain(repo) == ""
+
+    def test_out_of_scope_change_still_fails_without_update_ref(self, repo):
+        head = _run_git(repo, "rev-parse", "HEAD").stdout
+        (repo / "other.md").write_text("changed\n", encoding="utf-8")
+        real_stage = git_ops._run_git_with_lock_retry
+
+        def sneaky(args, **kw):
+            if args[:2] == ["git", "write-tree"]:
+                real_stage(["git", "add", "--", "other.md"], **kw)
+            return real_stage(args, **kw)
+
+        (repo / "old.md").write_text(_BODY + "x\n", encoding="utf-8")
+        with patch.object(git_ops, "_run_git_with_lock_retry", sneaky):
+            r = git_ops.commit_files_isolated(["old.md"], "x", cwd=str(repo))
+        assert r["status"] == "failed", r
+        assert _run_git(repo, "rev-parse", "HEAD").stdout == head
+
+    def test_directory_path_rejected_with_reason(self, repo):
+        (repo / "d1" / "f.md").write_text("changed\n", encoding="utf-8")
+        head = _run_git(repo, "rev-parse", "HEAD").stdout
+        r = git_ops.commit_files_isolated(["d1"], "dir", cwd=str(repo))
+        assert r["status"] == "failed", r
+        assert "目錄" in r["error"]
+        assert _run_git(repo, "rev-parse", "HEAD").stdout == head
+
+
+# ---------------------------------------------------------------------------
+# reference-transaction 預驗證（GUARD_PREVALIDATED）
+# ---------------------------------------------------------------------------
+
+import importlib.util
+import sys
+
+_CLAUDE_DIR = Path(__file__).resolve().parents[4]
+_NEW = "a" * 40
+_OLD = "b" * 40
+_BRANCH_REF = "refs/heads/feat/x"
+
+
+@pytest.fixture(autouse=True)
+def _no_prevalidate_in_mock_tests(request, monkeypatch):
+    """既有的 mock/真實 git 測試不涉及預驗證；以 TestPrevalidate 為前綴的類別才啟用。"""
+    cls = request.node.cls
+    if cls is not None and cls.__name__.startswith("TestPrevalidate"):
+        return
+    monkeypatch.setattr(git_ops, "_prevalidate_guard_env", lambda *a, **k: None, raising=False)
+
+
+class TestPrevalidateGuardEnv:
+    """_prevalidate_guard_env 的每個命中條件，各有一個不符即回 None 的對照。"""
+
+    @pytest.fixture()
+    def stub(self, monkeypatch, tmp_path):
+        root = tmp_path / "repo"
+        guard = root / ".claude" / "hooks" / "git-ref-transaction-content-guard.py"
+        guard.parent.mkdir(parents=True)
+        guard.write_text("", encoding="utf-8")
+        state = {"git": {}, "guard": (0, "PREVALIDATE_CLEAN\n", ""), "guard_calls": [], "git_calls": []}
+
+        def fake_git(args, cwd=None, **kw):
+            state["git_calls"].append((args, cwd))
+            if args[:3] == ["git", "symbolic-ref", "-q"]:
+                return state["git"].get("sym", (True, _BRANCH_REF + "\n", ""))
+            if args[:2] == ["git", "rev-parse"] and "MERGE_HEAD" in args:
+                return state["git"].get("merge", (False, "", ""))
+            raise AssertionError(f"未預期的 git 呼叫 {args}")
+
+        def fake_guard(repo_root, stdin_text):
+            state["guard_calls"].append((repo_root, stdin_text))
+            result = state["guard"]
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        monkeypatch.setattr(git_ops, "_run_git", fake_git)
+        monkeypatch.setattr(git_ops, "_run_guard_prevalidate", fake_guard, raising=False)
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", "/somewhere/else")
+        state["root"] = str(root)
+        return state
+
+    def _call(self, stub):
+        return git_ops._prevalidate_guard_env(stub["root"], _NEW, _OLD)
+
+    def test_clean_returns_new_old_ref(self, stub):
+        assert self._call(stub) == f"{_NEW}:{_OLD}:{_BRANCH_REF}"
+        assert stub["guard_calls"] == [(stub["root"], f"{_OLD} {_NEW} {_BRANCH_REF}\n")]
+
+    def test_branch_resolved_in_given_root_not_env_project_dir(self, stub):
+        self._call(stub)
+        assert all(cwd == stub["root"] for _args, cwd in stub["git_calls"])
+
+    def test_guard_block_exit_code_returns_none_silently(self, stub, capsys):
+        stub["guard"] = (87, "", "deny 訊息")
+        assert self._call(stub) is None
+        assert capsys.readouterr().err == ""
+
+    def test_warn_without_clean_token_returns_none(self, stub):
+        stub["guard"] = (0, "", "[git-ref-transaction-content-guard] 提醒：WARN")
+        assert self._call(stub) is None
+
+    def test_merge_head_returns_none_without_running_guard(self, stub):
+        stub["git"]["merge"] = (True, "abc\n", "")
+        assert self._call(stub) is None
+        assert stub["guard_calls"] == []
+
+    def test_detached_head_returns_none(self, stub):
+        stub["git"]["sym"] = (False, "", "fatal: ref HEAD is not a symbolic ref")
+        assert self._call(stub) is None
+        assert stub["guard_calls"] == []
+
+    def test_non_heads_symbolic_ref_returns_none(self, stub):
+        stub["git"]["sym"] = (True, "refs/remotes/origin/x\n", "")
+        assert self._call(stub) is None
+        assert stub["guard_calls"] == []
+
+    def test_missing_guard_script_returns_none(self, stub):
+        Path(stub["root"], ".claude/hooks/git-ref-transaction-content-guard.py").unlink()
+        assert self._call(stub) is None
+        assert stub["guard_calls"] == []
+
+    @pytest.mark.parametrize("bad", [(1, "", "uv 解析失敗"), (127, "", "not found"),
+                                     (0, "", "[x] 內部錯誤（已放行，未阻擋本次 ref 寫入）：boom"),
+                                     OSError("uv 不存在"), subprocess.TimeoutExpired("uv", 1)])
+    def test_load_failure_is_visible_on_stderr_and_log_and_returns_none(self, stub, capsys, bad):
+        stub["guard"] = bad
+        assert self._call(stub) is None
+        assert "[WARNING]" in capsys.readouterr().err
+        logs = list(Path(stub["root"], ".claude", "hook-logs", "git-ops-prevalidate").glob("*.log"))
+        assert logs and logs[0].read_text(encoding="utf-8").strip()
+
+
+class TestPrevalidateEnvPropagation:
+    """env 只隨該次 update-ref 傳遞，不殘留於其他 git 呼叫與行程環境。"""
+
+    def _run(self, prevalidated):
+        envs = []
+
+        def fake_run(args, **kwargs):
+            envs.append((args[:2], kwargs.get("env")))
+            return _fake_run_factory([])(args, **kwargs)
+
+        with patch.object(git_ops, "_prevalidate_guard_env", return_value=prevalidated), \
+                patch.object(git_ops.subprocess, "run", side_effect=fake_run):
+            result = git_ops.commit_files_isolated([_TARGET], "msg")
+        return result, envs
+
+    def test_env_set_only_on_update_ref(self):
+        result, envs = self._run(f"{_NEW}:{_OLD}:{_BRANCH_REF}")
+        assert result["status"] == "committed"
+        with_key = [a for a, e in envs if e and "GUARD_PREVALIDATED" in e]
+        assert with_key == [["git", "update-ref"]]
+        update_env = [e for a, e in envs if a == ["git", "update-ref"]][0]
+        assert update_env["GUARD_PREVALIDATED"] == f"{_NEW}:{_OLD}:{_BRANCH_REF}"
+        assert "GUARD_PREVALIDATED" not in os.environ
+
+    def test_no_env_when_prevalidation_declines(self):
+        result, envs = self._run(None)
+        assert result["status"] == "committed"
+        assert not [a for a, e in envs if e and "GUARD_PREVALIDATED" in e]
+
+
+@pytest.fixture()
+def guard_world(tmp_path, monkeypatch):
+    """真實 git 倉庫 + 真實 shim + 真實 guard（假 uv 記錄每次呼叫後轉交 python 執行）。"""
+    spec = importlib.util.spec_from_file_location(
+        "installer", _CLAUDE_DIR / "hooks" / "git-ref-transaction-guard-install-hook.py")
+    installer = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(_CLAUDE_DIR / "hooks"))
+    sys.path.insert(0, str(_CLAUDE_DIR))
+    spec.loader.exec_module(installer)
+
+    log = tmp_path / "uv.log"
+    fakebin = tmp_path / "bin"
+    fakebin.mkdir()
+    uv = fakebin / "uv"
+    uv.write_text(
+        f'#!/bin/sh\necho "pv=${{GIT_REF_GUARD_PREVALIDATE_ONLY:-0}}" >> {log}\n'
+        f'shift 2\nexec {sys.executable} "$@"\n', encoding="utf-8")
+    uv.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fakebin}:{os.environ['PATH']}")
+    for k in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(k, "t")
+    for k in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(k, "t@t")
+
+    def make_repo(path):
+        path.mkdir()
+        _run_git(path, "init", "-q", "-b", "main")
+        (path / "README.md").write_text("base\n", encoding="utf-8")
+        _run_git(path, "add", "README.md")
+        _run_git(path, "commit", "-qm", "base")
+        (path / ".claude").symlink_to(_CLAUDE_DIR)
+        return path
+
+    class World:
+        pass
+
+    w = World()
+    w.log, w.make_repo, w.installer = log, make_repo, installer
+    w.tmp = tmp_path
+
+    def install(repo):
+        hooks = repo / ".git" / "hooks"
+        hooks.mkdir(exist_ok=True)
+        shim = hooks / "reference-transaction"
+        shim.write_text(installer._shim_body(), encoding="utf-8")
+        shim.chmod(0o755)
+
+    w.install = install
+    w.calls = lambda: log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+    return w
+
+
+class TestPrevalidateEndToEnd:
+    def test_clean_commit_runs_python_only_in_prevalidation_not_under_lock(self, guard_world):
+        repo = guard_world.make_repo(guard_world.tmp / "r1")
+        _run_git(repo, "checkout", "-q", "-b", "feat/x")
+        guard_world.install(repo)
+        (repo / "docs").mkdir()
+        (repo / "docs" / "n.md").write_text("clean\n", encoding="utf-8")
+        r = git_ops.commit_files_isolated(["docs/n.md"], "c", cwd=str(repo))
+        assert r["status"] == "committed", r
+        assert guard_world.calls() == ["pv=1"]
+
+    def test_violation_on_protected_branch_not_prevalidated_and_blocked_by_hook(self, guard_world):
+        repo = guard_world.make_repo(guard_world.tmp / "r2")
+        guard_world.install(repo)
+        (repo / "src").mkdir()
+        (repo / "src" / "v.txt").write_text("違規\n", encoding="utf-8")
+        head = _run_git(repo, "rev-parse", "HEAD").stdout
+        r = git_ops.commit_files_isolated(["src/v.txt"], "v", cwd=str(repo))
+        assert r["status"] == "failed", r
+        assert "branch-verify" in r["error"]
+        assert guard_world.calls() == ["pv=1", "pv=0"]
+        assert _run_git(repo, "rev-parse", "HEAD").stdout == head
+
+    def test_worktree_protected_branch_violation_blocked_despite_env_project_dir(
+            self, guard_world, monkeypatch):
+        primary = guard_world.make_repo(guard_world.tmp / "r3")
+        _run_git(primary, "checkout", "-q", "-b", "feat/y")
+        guard_world.install(primary)
+        wt = guard_world.tmp / "wt"
+        _run_git(primary, "worktree", "add", "-q", str(wt), "main")
+        (wt / ".claude").symlink_to(_CLAUDE_DIR)
+        (wt / "src").mkdir()
+        (wt / "src" / "v.txt").write_text("違規\n", encoding="utf-8")
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(primary))
+        guard_world.log.write_text("", encoding="utf-8")  # 清掉 worktree add 的 hook 觸發
+        head = _run_git(wt, "rev-parse", "HEAD").stdout
+        r = git_ops.commit_files_isolated(["src/v.txt"], "v", cwd=str(wt))
+        assert r["status"] == "failed", r
+        assert "branch-verify" in r["error"]
+        assert guard_world.calls() == ["pv=1", "pv=0"]
+        assert _run_git(wt, "rev-parse", "HEAD").stdout == head

@@ -61,6 +61,8 @@
 - 建立子任務（使用 `--parent` 參數）
 - Ticket 類型為 DOC（`--type DOC`）
 
+**退出碼與 auto-commit 失敗**：`create` 落盤後會自動提交票檔。提交遇暫時性鎖競爭時退避重試（等待總和上限約 5 秒）；最終仍失敗時 stderr 輸出 `[WARNING]`（含失敗原因、鎖檔路徑、補救指令），票檔保留在 working tree、不回滾建票，並以專用退出碼 **75**（`EXIT_AUTO_COMMIT_FAILED`，`ticket_system/lib/git_utils.py`）結束，與建票失敗（1）區分。工具絕不自動刪除鎖檔：過期鎖須先確認沒有 git 行程在執行，再由人依鎖檔內容判斷後手動移除。目錄非 git repo 時僅 stderr 提示、退出碼維持 0。呼叫端判成敗讀 `$?`：75 代表「票已建、未入庫」，補救為手動提交該票檔。
+
 ## 版本歸屬引導
 
 `create` 時根據 `--type` 和 `--action` 自動建議目標版本。新功能（IMP + 實作/新增/建立/開發）→ 大版本（0.x+1.0）；修復/改善/分析/文件 → 小版本（最新已完成版本 +1 patch）。未指定 `--version` 時自動套用建議；指定但與建議不符時輸出 WARNING（不阻擋）。
@@ -273,9 +275,20 @@ ticket create --wave 3 --action "修復" --target "XXX" \
 
 只做 `scope` 欄位的機械檢查，不判斷 why 欄語意或票的緊急程度；`--scope-blocker` 的理由是否合理留給後續審查（如版本回顧），閘門本身不做語意判斷。
 
+## 指向 ANA 的耦合後果提示
+
+ANA 掛著非終態 children 時不能 complete，被 blockedBy 的 ANA 不 complete，依賴它的票就一直等。建票當下命中下列兩種情況時，stderr 印一行 `[HINT] ANA 將保持開啟...`，**只提示、不阻擋、exit code 不變**：
+
+| 情況 | 提示內容 |
+|------|---------|
+| `--parent <ANA>`，且該 ANA 已被其他非終態票 blockedBy | ANA 將保持開啟到本票終態；列出 N 張 blockedBy 本 ANA 的票 |
+| `--blocked-by <ANA>`，且該 ANA 有非終態 children | 列出 ANA 的非終態 children；本票等到它們全部終態後 ANA 才能 complete |
+
+父票或 blockedBy 目標不是 ANA、ANA 無 blockedBy 依賴者、ANA 的 children 皆已終態時不提示。`ticket track set-blocked-by`（replace／`--add`，不含 `--remove`）指向有非終態 children 的 ANA 時同型提示。
+
 ## --source-ticket 參數（衍生關係）
 
-`--source-ticket <SOURCE-ID>` 用於建立「衍生 Ticket」關係（spawned_tickets），典型場景為 ANA 衍生 IMP / ADJ、執行中發現的獨立技術債。
+`--source-ticket <SOURCE-ID>` 用於建立「衍生 Ticket」關係（spawned_tickets），典型場景為執行中發現、結論未要求的獨立工作（獨立 bug、技術債）。ANA 結論要求的落地不屬此參數，改用 `--parent`（PC-091）。
 
 ### --discovered-during vs --source-ticket（發現衍生 vs 規劃衍生）
 
@@ -283,7 +296,7 @@ ticket create --wave 3 --action "修復" --target "XXX" \
 
 | 旗標 | 適用情境 | 上游主題的意義 | 對 S1 判準的影響 |
 |------|---------|---------------|-----------------|
-| `--source-ticket` | 規劃衍生：ANA 拆 IMP、父票拆子票，上游本就決定了新票主題 | 主題必然相同 | S1 正常繼承 |
+| `--source-ticket` | 規劃衍生：上游本就決定了新票主題的獨立延伸工作（ANA 結論要求的落地用 `--parent`，PC-091；父票拆子票同用 `--parent`） | 主題必然相同 | S1 正常繼承 |
 | `--discovered-during` | 發現衍生：執行中撞到跨主題問題，主題取決於撞到什麼，與上游無關 | 只反映「當時剛好在改哪個檔案」 | S1 短路不觸發 |
 
 新票的 `discovered_during` frontmatter 欄位記錄血緣供追溯，但不驅動任何主題指派——S2 檔案叢集判準不受影響，仍依新票自身 `--where` 正常運作（可能命中，也可能未命中）。

@@ -61,6 +61,8 @@ from ticket_system.lib.ticket_ops import (
 )
 from ticket_system.lib.tdd_phase_inference import TDD_PHASE_SOURCE_MANUAL
 from ticket_system.lib.ticket_validator import validate_ticket_id
+from ticket_system.lib.ana_coupling_hint import hint_blocked_by_ana
+from ticket_system.lib import git_utils
 
 # _execute_set_relation_field 呼叫入口對應的 CLI 子命令名稱，
 # 用於逗號分隔誤用訊息中組出正確指令範例。
@@ -253,6 +255,11 @@ def _execute_set_relation_field(
 
         ticket_path = resolve_ticket_path(target_ticket, version, target_id)
         save_ticket(target_ticket, ticket_path)
+        commit_failed = git_utils.commit_ticket_md_reporting(
+            _RELATION_FIELD_TO_CLI_COMMAND.get(field_name, field_name),
+            str(ticket_path), target_id, field_name,
+            operation=_RELATION_FIELD_TO_CLI_COMMAND.get(field_name, field_name),
+        )
 
     # Step 6：輸出成功訊息
     print(format_info(
@@ -265,7 +272,10 @@ def _execute_set_relation_field(
     else:
         print(f"  新值：（空）")
 
-    return 0
+    if field_name == "blockedBy" and not is_remove_mode:
+        hint_blocked_by_ana(version, referenced_ids, target_id)
+
+    return git_utils.EXIT_AUTO_COMMIT_FAILED if commit_failed else 0
 
 
 def execute_set_blocked_by(args: argparse.Namespace, version: str) -> int:
@@ -370,6 +380,12 @@ def execute_add_child(args: argparse.Namespace, version: str) -> int:
         child_path = resolve_ticket_path(child_ticket, version, child_id)
         save_ticket(child_ticket, child_path)
 
+        # 父子兩張是同一個關係操作，單一 commit 提交
+        commit_failed = git_utils.commit_ticket_mds_reporting(
+            "add-child", [str(child_path), str(parent_path)], child_id,
+            "parent-link", operation="add-child",
+        )
+
     # Step 9：輸出成功訊息
     print(format_info(InfoMessages.CHILD_RELATION_CREATED))
     print(f"{TrackRelationsMessages.RELATION_PARENT_PREFIX} {parent_id}")
@@ -377,7 +393,7 @@ def execute_add_child(args: argparse.Namespace, version: str) -> int:
     if old_parent:
         print(f"{TrackRelationsMessages.RELATION_OLD_PARENT_PREFIX} {old_parent} {TrackRelationsMessages.RELATION_OLD_PARENT_SUFFIX}")
 
-    return 0
+    return git_utils.EXIT_AUTO_COMMIT_FAILED if commit_failed else 0
 
 
 def execute_set_parent(args: argparse.Namespace, version: str) -> int:
@@ -462,6 +478,9 @@ def execute_set_parent(args: argparse.Namespace, version: str) -> int:
             print(format_info(InfoMessages.PARENT_RELATION_NOOP, child_id=child_id))
             return 0
 
+        # 三張以內的寫入路徑，結尾以單一 commit 提交
+        written_paths: list[str] = []
+
         # Step 3：從舊 parent 的 children 移除本票（舊 parent 可能已不存在票庫中）
         if old_parent_id:
             old_parent_ticket = load_ticket(version, old_parent_id)
@@ -471,10 +490,11 @@ def execute_set_parent(args: argparse.Namespace, version: str) -> int:
                     old_parent_ticket["children"] = [
                         cid for cid in children if cid != child_id
                     ]
-                    save_ticket(
-                        old_parent_ticket,
-                        resolve_ticket_path(old_parent_ticket, version, old_parent_id),
+                    old_parent_path = resolve_ticket_path(
+                        old_parent_ticket, version, old_parent_id
                     )
+                    save_ticket(old_parent_ticket, old_parent_path)
+                    written_paths.append(str(old_parent_path))
 
         # Step 4：加入新 parent 的 children（去重）
         if new_parent_id and new_parent_ticket is not None:
@@ -482,10 +502,11 @@ def execute_set_parent(args: argparse.Namespace, version: str) -> int:
             if child_id not in children:
                 children.append(child_id)
             new_parent_ticket["children"] = children
-            save_ticket(
-                new_parent_ticket,
-                resolve_ticket_path(new_parent_ticket, version, new_parent_id),
+            new_parent_path = resolve_ticket_path(
+                new_parent_ticket, version, new_parent_id
             )
+            save_ticket(new_parent_ticket, new_parent_path)
+            written_paths.append(str(new_parent_path))
 
         # Step 5：更新本票的 parent_id 與 chain.parent
         child_ticket["parent_id"] = new_parent_id
@@ -496,9 +517,11 @@ def execute_set_parent(args: argparse.Namespace, version: str) -> int:
             chain_info.pop("parent", None)
         child_ticket["chain"] = chain_info
 
-        save_ticket(
-            child_ticket,
-            resolve_ticket_path(child_ticket, version, child_id),
+        child_path = resolve_ticket_path(child_ticket, version, child_id)
+        save_ticket(child_ticket, child_path)
+        commit_failed = git_utils.commit_ticket_mds_reporting(
+            "set-parent", [str(child_path), *written_paths], child_id,
+            "parent-link", operation="set-parent",
         )
 
     if new_parent_id:
@@ -511,7 +534,7 @@ def execute_set_parent(args: argparse.Namespace, version: str) -> int:
     print(f"{TrackRelationsMessages.SET_PARENT_OLD_PREFIX} {old_label}")
     print(f"{TrackRelationsMessages.SET_PARENT_NEW_PREFIX} {new_label}")
 
-    return 0
+    return git_utils.EXIT_AUTO_COMMIT_FAILED if commit_failed else 0
 
 
 def _normalize_phase_input(phase: str) -> str:
@@ -564,11 +587,14 @@ def execute_phase(args: argparse.Namespace, version: str) -> int:
 
         ticket_path = resolve_ticket_path(ticket, version, args.ticket_id)
         save_ticket(ticket, ticket_path)
+        commit_failed = git_utils.commit_ticket_md_reporting(
+            "phase", str(ticket_path), args.ticket_id, "current_phase", operation="phase",
+        )
 
     print(format_info(InfoMessages.PHASE_UPDATED, ticket_id=args.ticket_id))
     print(f"{TrackRelationsMessages.PHASE_PREFIX} {phase}")
     print(f"{TrackRelationsMessages.PHASE_ASSIGNEE_PREFIX} {args.agent}")
-    return 0
+    return git_utils.EXIT_AUTO_COMMIT_FAILED if commit_failed else 0
 
 
 def execute_agent(args: argparse.Namespace, version: str) -> int:
