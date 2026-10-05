@@ -219,6 +219,10 @@
     "hash": "d30c4b61bfcce7dce06b5f77a57239073ef8656f5805da6bae0440f75b1bc11e",
     "version": "1.0.0"
   },
+  "system-design": {
+    "hash": "44da01c37b8d84a23fdbe20962f6277745bf6407e275375a61ba2a9845b20e1e",
+    "version": "0.1.0"
+  },
   "tdd": {
     "hash": "4a138f6b232e57424fc5c546d94601cda0e1a17cd83a4d08014e742e52f35c0f",
     "version": "2.12.1"
