@@ -2,6 +2,10 @@
 
 新到舊。版號規則與兩個住址（本檔與 `SKILL.md` frontmatter 的 `metadata.version`）見專案的 skill 同步規範。
 
+**Version**: 1.40.0 — 標題與段標規則補一條：沒有下斷言的標籤式段標（「往下讀」「判讀方式」）與帶指示詞的名詞子句（「為什麼只收這幾本」）同樣要改成寫出對象的主旨，固定收尾段名不是例外；寫不出有意義主旨的段標就移除並把那一節併進相鄰的節；標題為了寫出成員而變長可以接受。principle 卡 title-states-the-subject-not-a-premised-conclusion 的合規邊界與 SKILL.md 同步
+
+**Version**: 1.39.0 — 標題與段標的規則由「承載結論的直述句」改為「寫主旨的直述句、不寫成結論句」：新增 principle 卡 title-states-the-subject-not-a-premised-conclusion（規則、寫法、把標題當成別篇連結文字讀的檢查方法、合規邊界），SKILL.md 敘事姿態段改寫並新增一條、keyword bank 新增「結論句標題與段標」類別，write-for-readers-not-audiences 與 content-pressure 兩張卡裡「標題承載結論」的句子同步改掉
+
 **Version**: 1.38.1 — principle 卡 code-fragments-in-prose-make-readers-reassemble 補一個 SQL 教材分類全掃的發現：句型 pattern 只抓到一小部分描述式形態，寫成程式實跑後對出十幾處散文裡讀得通的內容錯
 
 **Version**: 1.38.0 — 「散文夾程式」補計數掃不到的形態：散文描述一段頁面上沒出現的程式或資料變體（改一列之後回什麼、換一種寫法回什麼、展開式），偵測改用句型 pattern；處置是寫出來並實跑、結果寫成註解，「原文只描述了程式時不補」限定在改寫者沒有環境可跑時。demonstrating-commands、SKILL.md bank、principle 卡同步
