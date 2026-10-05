@@ -3,7 +3,7 @@ name: foundation-design
 description: "地基工作的單一入口與路由層。逐維度決定「本專案的地基產物是什麼」，權威只提供預設產物，形態不符時改寫產物而非跳過維度。維度含 UI／測試／資料庫／DevOps／可觀測性／事件流仲裁，各指名既有權威並標明權威缺席時的處置。新舊專案一體適用：接手他人專案先盤點萃取再命名固化。觸發詞：地基、地基波、元件庫、design token、fixture、seed、migration、scaffold、鷹架、腳手架、接手老專案。Do NOT use for 環境安裝（用 project-init）。"
 license: MIT
 metadata:
-  version: 6.7.0
+  version: 6.7.1
   category: engineering-workflow
 ---
 
@@ -22,6 +22,8 @@ metadata:
 **判準的查證對象一律是版控內容（tracked），不是工作目錄。** 未進版控的本地檔（被 gitignore 的設定檔、個人筆記）在別人的 clone 裡不存在，用它判定會讓同一個 repo 在不同機器上得出不同結論。
 
 ## 本 skill 不做什麼
+
+**不決定地基什麼時候做。** 哪些地基要在這一版做、哪些延後到觸發指標出現，由 `system-design` 的決策時機分類決定；它判為「先做」的項目裡屬於地基的（測試鷹架、migration、可觀測性），由本 skill 決定產物是什麼。
 
 **不重新定義任何維度的判準。** 下方〈維度與產物〉表列出的每個維度全部已有既有權威。本 skill 的職責是指名它們、界定每個維度在本專案該產出什麼、標明權威缺席時的處置、以及交接契約。
 
