@@ -168,8 +168,8 @@
     "version": "1.10.0"
   },
   "observability-stack": {
-    "hash": "136da3bd00124d3d91188b87eb514f8a45c11cac5bd23787d94e9a4096a840d5",
-    "version": "1.1.0"
+    "hash": "5de4445bde3336e33bd3f3efc62680750a5341f6f5fd37b80db32749454ac922",
+    "version": "1.5.0"
   },
   "parallel-evaluation": {
     "hash": "1bedd3dc681d45d13eb4d1bdee3650197130640b07edd33cee00362c3de40881",
