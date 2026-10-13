@@ -7,7 +7,7 @@
 - **版本固定**：映像檔寫明版本，不用 `latest`；README 的版本表與部署設定一致。
 - **對外的連接埠只綁本機**：Prometheus、Grafana 的程式預設聽全部介面，所以在部署設定裡把連接埠寫成只綁 `127.0.0.1`（例如 compose 寫 `"127.0.0.1:9090:9090"`）；要對外時另外決定經過哪個入口與認證。
 - **exporter 用最小權限的帳號**：資料庫的 exporter 用專用帳號（PostgreSQL 給內建的 `pg_monitor`），不沿用應用程式的帳號。帳號由資料庫初始化腳本建立時，初始化腳本只在資料目錄是空的時候執行，既有的資料庫要另外補建，把補建的指令寫進 README。
-- **設定與面板以檔案進 repo**：讀取設定、Grafana 的資料來源與面板以 provisioning 檔佈建，介面上的修改不寫回檔案（`allowUiUpdates: false`），以檔案為準。
+- **設定與面板以檔案進 repo**：讀取設定、Grafana 的資料來源與面板以 provisioning 檔佈建，被佈建的面板在介面上不能儲存（`allowUiUpdates: false`；設成 true 時修改只存進 Grafana 的資料庫、下次同步被檔案蓋掉，兩者都不寫回檔案），以檔案為準。
 - **環境相依的值用環境變數，並寫下找法**：例如 cAdvisor 的 containerd socket 路徑。只寫值的話，換一個環境的人會照抄。
 
 ## 各層
@@ -17,7 +17,7 @@
 | 層 | 工具 | 接法 | 這個工具收不到（改由哪裡收） |
 | --- | --- | --- | --- |
 | 入口（Nginx） | nginx-prometheus-exporter | 代理開一個只聽內部 port、只允許私有位址的 `stub_status`，exporter 讀它 | 依網域、狀態碼、上游分開的請求數：要從 access log 算 |
-| 容器 | cAdvisor | 掛載 `/`、`/var/run`、`/sys`、`/var/lib/docker`，`--docker_only=true`（只在 Docker 引擎上用）；containerd socket 不在預設位置的環境要用 `--containerd` 指定 | 容器裡是哪個行程 |
+| 容器 | cAdvisor | 掛載 `/`、`/var/run`、`/sys`、`/var/lib/docker`，`--docker_only=true`（只在 Docker 引擎上用）、`--housekeeping_interval` 對齊讀取間隔（預設每秒更新，更新比讀取頻繁的部分沒有人讀，對齊可省 CPU）；containerd socket 不在預設位置的環境要用 `--containerd` 指定 | 容器裡是哪個行程 |
 | 主機 | node_exporter | `pid: host`、掛載 `/` 到 `/host` 並 `--path.rootfs=/host`；留在容器網路裡時關掉 `netdev`、`netstat`、`sockstat`（看到的是自己容器的網路），網路改看 cAdvisor | 它所在那一層以外的機器的 CPU 負載；磁碟看得到哪幾顆依環境而定，見本檔〈實測遇到的問題〉的磁碟告警一則 |
 | PostgreSQL | postgres_exporter | 專用帳號加 `pg_monitor` | 個別查詢的耗時：要 `pg_stat_statements` |
 | Redis / Valkey | redis_exporter | `REDIS_ADDR` 指向服務 | 應用程式那一端等它的時間 |
@@ -43,7 +43,7 @@ docker run --rm -v /var/run:/host-run:ro alpine find /host-run -name 'containerd
 **磁碟告警一顆磁碟發好幾則，或漏掉主機的磁碟**：同一顆磁碟常掛在好幾個掛載點（OrbStack 把主機的 `/Users`、`/private`、`/tmp` 等都掛進虛擬機），依掛載點告警時一顆磁碟發好幾則。依裝置分組：
 
 ```promql
-min by (device, fstype) (
+min by (host, device, fstype) (
   node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|vfat"}
   / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|vfat"}
 ) < 0.10
@@ -81,6 +81,16 @@ scrape_configs:
 ```
 
 Blackbox exporter 從 `__param_target` 推出被探測的主機。Kubernetes 上服務的序列帶 Pod 的位址，用 `* on (namespace, pod) group_left(node) kube_pod_info` 把 `kube_pod_info` 的 `node` 標籤加到服務的序列上；node_exporter 的序列用 `label_replace` 產生同名的 `node` 標籤。原因與症狀的序列都有同名同值的 `node`，`equal` 才對得上。
+
+**讀取對象的清單與主機的消失**：主機多於一台時，讀取對象寫在 `file_sd_configs` 指向的清單檔（每個對象帶 `host`），由部署工具從主機清單產生；Prometheus 監看這個檔，改了不必重新載入。掛進容器的是放清單的目錄，不是單一檔案：單一檔案的掛載綁在原本的 inode，以換檔方式改寫之後容器讀不到新內容，`prometheus.yml` 與 `alertmanager.yml` 同理。偵測依清單的來源分開寫：
+
+| 情形 | 序列的樣子 | 規則 |
+| --- | --- | --- |
+| 主機停掉、仍在清單上 | `up` 變成 0 | 讀取成功比例的規則，依 `host` 各自成立 |
+| 主機從清單上消失（雲端服務發現在執行個體終止後拿掉它） | `up` 序列消失 | `count(up{job="node"}) < <預期台數>`，台數取自部署設定；不可少的主機另寫 `absent(up{job="node", host="<名稱>"})` |
+| 清單整個空了 | 沒有任何 `up` 序列 | `absent(up{job="node"})` |
+
+檔案清單由部署工具維護時，清單就是預期的主機，前兩種只會出現第一種；`ec2_sd_configs` 這類服務發現三種都會出現（停止而未終止的執行個體仍有私有 IP，留在清單上）。
 
 ## 部署在 Kubernetes 時
 
