@@ -163,6 +163,10 @@
     "hash": "e444ced5af6a2ab2c7da7c6130f11bfd55f79d74d6b7c548758965b5fb08f152",
     "version": "2.29.2"
   },
+  "multi-session-orchestration": {
+    "hash": "421d6217e271b0021681c2bcc4bef2cc2206fcdf6a43d9c89e1f75d93b11c17c",
+    "version": "1.0.0"
+  },
   "neurodivergent-output": {
     "hash": "2505349c2529f873bc5098c32e7af572faffaaa62e1699e0d0c26f6948951982",
     "version": "1.10.0"
