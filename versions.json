@@ -124,8 +124,8 @@
     "version": "2.6.0"
   },
   "frontend-with-playwright": {
-    "hash": "f1c7bd48f304b5d44bb0750c328585f97ca6cca485d1a389bd3707516d810d4d",
-    "version": "0.3.3"
+    "hash": "a65340f55d6da9c3db84be588ce41746362098a358b4e3276536a1acccc54527",
+    "version": "0.3.4"
   },
   "golden-path-validation": {
     "hash": "032b43c32461cbf08fbc2def134b39f50a8243b1b9edd2c58b28d42fc522f633",
