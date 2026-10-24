@@ -114,11 +114,11 @@ ps -o comm= -p "$pid"
 
 load average 計的是正在跑加上排隊等待的執行緒。Linux 把等磁碟 I/O、不可中斷的執行緒（`ps` 狀態 `D`）也算進去；macOS 在記憶體壓力下實測同樣出現 load 遠高於 CPU 使用率能解釋的情形。所以 load 高只說明「有很多執行緒在等」，不說明在等什麼；先分出是哪一種資源，再決定停什麼。
 
-| 資源 | macOS | Linux | 判讀 |
-| --- | --- | --- | --- |
-| CPU | `uptime`、`sysctl -n hw.ncpu`、`ps -Ao pcpu,comm -r \| head` | `uptime`、`nproc`、`top -bn1 \| head -15` | load 除以核心數遠大於 1，**而且**行程的 CPU 使用率加總接近核心數，才是 CPU 不夠 |
-| 記憶體 | `sysctl vm.swapusage`、`vm_stat \| grep -E "free\|Swapouts"`、`top -l 1 -o mem -n 12 -stats pid,command,mem` | `free -h`、`vmstat 1 5`（`si`/`so` 欄）、`cat /proc/pressure/memory` | swap 接近用滿、可用頁幾乎為零、換頁持續發生，就是記憶體壓力 |
-| I/O | `iostat -d -w 2 -c 3 disk0` | `iostat -x 2 3`、`vmstat 1 5`（`wa` 欄）、`cat /proc/pressure/io` | 每秒 I/O 次數長時間居高；記憶體壓力下這些 I/O 多半是換頁 |
+| 資源   | macOS                                                                                                        | Linux                                                                | 判讀                                                                            |
+| ------ | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| CPU    | `uptime`、`sysctl -n hw.ncpu`、`ps -Ao pcpu,comm -r \| head`                                                 | `uptime`、`nproc`、`top -bn1 \| head -15`                            | load 除以核心數遠大於 1，**而且**行程的 CPU 使用率加總接近核心數，才是 CPU 不夠 |
+| 記憶體 | `sysctl vm.swapusage`、`vm_stat \| grep -E "free\|Swapouts"`、`top -l 1 -o mem -n 12 -stats pid,command,mem` | `free -h`、`vmstat 1 5`（`si`/`so` 欄）、`cat /proc/pressure/memory` | swap 接近用滿、可用頁幾乎為零、換頁持續發生，就是記憶體壓力                     |
+| I/O    | `iostat -d -w 2 -c 3 disk0`                                                                                  | `iostat -x 2 3`、`vmstat 1 5`（`wa` 欄）、`cat /proc/pressure/io`    | 每秒 I/O 次數長時間居高；記憶體壓力下這些 I/O 多半是換頁                        |
 
 **load 高而 CPU 使用率不高，先看記憶體與 I/O。** 實測：16 GB 的 macOS 上 load 到 90（8 核），行程的 CPU 使用率加總遠低於核心數；swap 用了 13 GB、可用頁只剩約 70 MB、磁碟每秒三千多次 I/O——瓶頸是記憶體，I/O 是換頁造成的。
 
@@ -141,19 +141,32 @@ load average 計的是正在跑加上排隊等待的執行緒。Linux 把等磁�
 
 判讀：`namei -l` + `stat` + `id` 三個先分掉大部分；mode 全對卻還 denied 才往 MAC / capability 查。
 
+## 結束某個使用者的所有工作階段（離職、帳號外洩）：以 `pgrep` 為準
+
+撤銷登入權限（移除 IAM 角色、停用帳號、刪 `authorized_keys`）只會擋住之後的新登入，已經連著的工作階段不受影響，要另外在主機上結束。撤銷與結束都要做，而最後一次結束要排在撤銷生效之後——IAM 角色的移除通常要幾分鐘才生效，在那之前結束，對方還能重新登入。正在造成損害時先結束一次，撤銷生效之後再照下面的步驟結束一次。
+
+`<user>` 必須是那個人專屬的帳號。共用帳號（`ubuntu`、`deploy`）不跑下面的 `loginctl terminate-user` 與 `pkill -u`，兩者都會連服務行程一起結束；改成先輪替該帳號的憑證，再結束這個帳號全部的互動工作階段（`pgrep -u <user> -a` 裡以 `sshd: <user>@` 開頭的行程），服務行程不動。共用帳號上分不出哪個工作階段屬於離職者，其他人用新憑證重新登入即可。
+
+1. `sudo loginctl terminate-user <user>`：結束 systemd-logind 登記過的這個使用者的全部工作階段（互動與非互動都算）。OS Login 的帳號名稱是 Google 帳號轉成的形式（例如 `alice_example_com`）。
+2. `pgrep -u <user> -a`：**用這一步判斷有沒有結束**，不用 `loginctl` 的回傳值。`pam_systemd` 在登入時登記失敗（`journalctl -b | grep "Failed to create session"` 有命中）的連線，logind 的清單裡沒有它們，這時 `terminate-user` 回報 `is not logged in or lingering`、exit 1，而那個使用者的行程仍在執行；反過來，exit 0 也只代表登記過的工作階段結束了。
+3. 還有剩下的行程：`sudo pkill -KILL -u <user>`，再跑一次 `pgrep -u <user> -a`，輸出是空的才算完成。
+
+`loginctl list-sessions` 查不到某個使用者、而 `pgrep -u` 看得到他的 `sshd: <user>@notty` 這類行程，就是登記失敗的徵兆。
+
 ## 被 kill / OOM / exit 137：查 kernel log
 
 程式無錯誤訊息就消失、或 systemd 顯示 `Killed` / `OOMKilled` / exit code 137（128+9=SIGKILL），userspace log 看不到原因——權威在 kernel ring buffer：`dmesg -T | grep -iE 'killed process|oom'`、`journalctl -k -b`。OOM killer 殺行程、I/O error、段錯誤都在這裡。
 
 ## 快速路由
 
-| 判斷         | 權威來源 / 工具                                                 |
-| ------------ | --------------------------------------------------------------- |
-| 程式活著沒   | `pgrep -x <正確 comm>` / `pgrep -af`                            |
-| 進程活著但沒運作 | 程式自己的 log（專屬指令 `<shell> -l`、不在 journalctl）+ IPC 回真實狀態；別信 `pgrep` |
-| 服務歸誰     | `busctl` GetNameOwner→PID→comm / `ss -lntp`                     |
-| 鎖沒鎖       | logind：`loginctl LockedHint`；合成器層：compositor / shell log |
-| 鎖屏死局     | `allow_session_lock_restore 1` + 起新鎖屏接管                   |
-| session 存活 | `zellij ls` / `tmux ls`；先保產出再清                           |
-| 卡住原因     | `df -h` / `free` 先排資源，再懷疑相容                           |
-| 應用無聲     | `wpctl status`：Sinks 空 = 棧缺件；stream `[active]` = 真在播   |
+| 判斷                         | 權威來源 / 工具                                                                        |
+| ---------------------------- | -------------------------------------------------------------------------------------- |
+| 程式活著沒                   | `pgrep -x <正確 comm>` / `pgrep -af`                                                   |
+| 進程活著但沒運作             | 程式自己的 log（專屬指令 `<shell> -l`、不在 journalctl）+ IPC 回真實狀態；別信 `pgrep` |
+| 服務歸誰                     | `busctl` GetNameOwner→PID→comm / `ss -lntp`                                            |
+| 鎖沒鎖                       | logind：`loginctl LockedHint`；合成器層：compositor / shell log                        |
+| 鎖屏死局                     | `allow_session_lock_restore 1` + 起新鎖屏接管                                          |
+| session 存活                 | `zellij ls` / `tmux ls`；先保產出再清                                                  |
+| 某個使用者的工作階段結束了沒 | `pgrep -u <user> -a` 為空；`loginctl` 的回傳值不算數，殘留用 `pkill -KILL -u`          |
+| 卡住原因                     | `df -h` / `free` 先排資源，再懷疑相容                                                  |
+| 應用無聲                     | `wpctl status`：Sinks 空 = 棧缺件；stream `[active]` = 真在播                          |

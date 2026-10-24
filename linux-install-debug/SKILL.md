@@ -12,10 +12,12 @@ description: >
   unbound variable, shell script 可攜, bash 3.2, timeout 找不到, 容器沒有 sudo,
   keyring 過期, PATH 沒吃到, load 很高, swap 滿, etcd 逾時, 磁碟滿, 檔案系統唯讀, OOM, exit 137, dmesg, 黑畫面, getty,
   chvt, 沒聲音, wpctl, DNS 解析不了, 機器沒回應, 服務告警, OnFailure, ntfy, 心跳監控,
+  host key changed, REMOTE HOST IDENTIFICATION HAS CHANGED, GCP IAP, Identity-Aware Proxy, IAP tunnel, IAP 4033, IAP 4003, failed to connect to backend, OS Login,
+  離職撤銷工作階段, loginctl terminate-user,
   linux install, linux debug, systemd, authoritative state.
 license: MIT
 metadata:
-  version: 1.19.0
+  version: 1.20.4
   category: ops-diagnostics
 ---
 
@@ -64,28 +66,30 @@ command -v pacman apt-get dnf brew   # 哪個套件管理器在場
 
 ## 權威來源速查表
 
-| 症狀類別                              | 權威來源                        | 工具                                                                                               |
-| ------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------- |
-| 某程式行為不對                        | 程式自己的 log 檔               | log 路徑、`journalctl -u <unit>`                                                                   |
-| 服務由誰提供                          | D-Bus name / socket 註冊        | `busctl`、`ss -lntp`、`lsof`                                                                       |
-| 登入 / 鎖定狀態                       | logind                          | `loginctl show-session <id>`                                                                       |
-| 服務跑了沒 / failed                   | systemd unit                    | `systemctl status` / `is-active` / `is-failed`、`list-units --failed`、`journalctl -u`             |
-| 程式活著沒                            | 行程表（比對正確 comm）         | `pgrep -x`、`pgrep -af`、`ps`                                                                      |
-| 進程活著但沒運作（畫得出來卻點不動）  | 程式自己的 log + IPC 回真實狀態 | 專屬 log 指令 `<shell> -l`（非 journalctl）、`<shell> ipc call ...`（回空=子系統死）；別信 `pgrep` |
-| 網路通不通                            | 介面 / 路由 / 鄰居表            | `ip -brief a`、`ip neigh`、`ss`（`arp` 常沒裝）                                                    |
-| 域名解析                              | resolver 設定                   | `getent hosts <域名>`、`/etc/resolv.conf`、`resolvectl`                                            |
-| 磁碟 / 記憶體                         | 檔案系統 / 記憶體用量           | `df -h`、`du -sh`、`free`、`mount \| grep -w ro`                                                   |
-| 主機很慢、load 很高                    | CPU、記憶體壓力、I/O 各自的用量 | load ÷ 核心數 + CPU 使用率加總、`sysctl vm.swapusage` / `free -h`、`iostat`；load 高而 CPU 不高先看記憶體 |
-| 核心 / 硬體 / 被殺行程(OOM、exit 137) | kernel ring buffer              | `dmesg`、`journalctl -k -b`                                                                        |
-| 權限被拒(EACCES)                      | 檔案 mode/owner、路徑逐層、MAC  | `namei -l <path>`、`stat`、`id`、`sudo -l`、`getcap`、`ausearch`(SELinux)                          |
-| 程式 log 沉默、不知哪個 syscall 失敗  | syscall 層                      | `strace -f -e trace=file <cmd>`                                                                    |
-| VT / 主控台（黑畫面 / 沒登入提示）    | getty 狀態（**chvt 前先查**）   | `systemctl is-active/is-enabled getty@tty<N>` → 再 `chvt`；`cat /sys/class/tty/tty0/active`        |
-| 應用無聲（多半不報錯）                | 音訊伺服器 graph                | `wpctl status`：Sinks 空 = 棧缺件（wireplumber 沒裝）；stream `[active]` = 真在播                  |
+| 症狀類別                              | 權威來源                        | 工具                                                                                                      |
+| ------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 某程式行為不對                        | 程式自己的 log 檔               | log 路徑、`journalctl -u <unit>`                                                                          |
+| 服務由誰提供                          | D-Bus name / socket 註冊        | `busctl`、`ss -lntp`、`lsof`                                                                              |
+| 登入 / 鎖定狀態                       | logind                          | `loginctl show-session <id>`                                                                              |
+| 服務跑了沒 / failed                   | systemd unit                    | `systemctl status` / `is-active` / `is-failed`、`list-units --failed`、`journalctl -u`                    |
+| 程式活著沒                            | 行程表（比對正確 comm）         | `pgrep -x`、`pgrep -af`、`ps`                                                                             |
+| 進程活著但沒運作（畫得出來卻點不動）  | 程式自己的 log + IPC 回真實狀態 | 專屬 log 指令 `<shell> -l`（非 journalctl）、`<shell> ipc call ...`（回空=子系統死）；別信 `pgrep`        |
+| 網路通不通                            | 介面 / 路由 / 鄰居表            | `ip -brief a`、`ip neigh`、`ss`（`arp` 常沒裝）                                                           |
+| 域名解析                              | resolver 設定                   | `getent hosts <域名>`、`/etc/resolv.conf`、`resolvectl`                                                   |
+| 磁碟 / 記憶體                         | 檔案系統 / 記憶體用量           | `df -h`、`du -sh`、`free`、`mount \| grep -w ro`                                                          |
+| 主機很慢、load 很高                   | CPU、記憶體壓力、I/O 各自的用量 | load ÷ 核心數 + CPU 使用率加總、`sysctl vm.swapusage` / `free -h`、`iostat`；load 高而 CPU 不高先看記憶體 |
+| 核心 / 硬體 / 被殺行程(OOM、exit 137) | kernel ring buffer              | `dmesg`、`journalctl -k -b`                                                                               |
+| 權限被拒(EACCES)                      | 檔案 mode/owner、路徑逐層、MAC  | `namei -l <path>`、`stat`、`id`、`sudo -l`、`getcap`、`ausearch`(SELinux)                                 |
+| 程式 log 沉默、不知哪個 syscall 失敗  | syscall 層                      | `strace -f -e trace=file <cmd>`                                                                           |
+| VT / 主控台（黑畫面 / 沒登入提示）    | getty 狀態（**chvt 前先查**）   | `systemctl is-active/is-enabled getty@tty<N>` → 再 `chvt`；`cat /sys/class/tty/tty0/active`               |
+| 應用無聲（多半不報錯）                | 音訊伺服器 graph                | `wpctl status`：Sinks 空 = 棧缺件（wireplumber 沒裝）；stream `[active]` = 真在播                         |
 
 ## 症狀 → 情境路由
 
 - **安裝新系統 / 首次開機驗證** → [install-and-verify](references/install-and-verify.md)（含裝好後主動確認有無服務監控、沒有就建議建立）
 - **SSH 連不上（先做 timeout vs refused 分流）、終端機噴亂碼 / 亂碼輸入、要從 SSH 操控圖形桌面** → [remote-access](references/remote-access.md)
+- **主機金鑰變更警告（`REMOTE HOST IDENTIFICATION HAS CHANGED`，含雲端 VM 重建之後）、經 IAP 這類代理連線失敗（`4033` / `4003` / 通道開了而 publickey 被拒）** → [remote-access](references/remote-access.md) 的主機金鑰那一條與「經 IAP 這類身分感知代理連線」段（清舊金鑰之前先用不經 SSH 的管道核對指紋）
+- **要結束某個使用者的所有工作階段（離職、帳號外洩）** → [process-service-state](references/process-service-state.md) 的「結束某個使用者的所有工作階段」段（先撤銷權限再結束，以 `pgrep -u` 為準）
 - **（從 remote-access 分流後）機器沒回應、域名解析不了、虛擬機開不起來、疑似磁碟滿 / 檔案系統唯讀連鎖** → [machine-unreachable](references/machine-unreachable.md)
 - **判程式活著沒 / 服務歸誰 / 服務 failed 或一直重啟(restart loop) / 鎖沒鎖 / session 存活 / 卡住是資源還是相容** → [process-service-state](references/process-service-state.md)
 - **進程活著卻不運作（GUI shell / bar 畫得出來但點不動、keybind 叫不出東西、焦點視窗打字正常）** → [process-service-state](references/process-service-state.md) 的「進程活著 ≠ 子系統活著」段（讀 shell 自己的 log + IPC，別信 pgrep）
