@@ -160,8 +160,8 @@
     "version": "1.0.2"
   },
   "multi-round-review": {
-    "hash": "ecf3640ff074c3d65ccf182dd096dd89967f38360c5af49aafc04d5f9bb145d4",
-    "version": "2.32.0"
+    "hash": "8e20e31e35e96c585ad8666d6e8b4ad1867bdb02118730257a77eb6f7adb23d9",
+    "version": "2.33.0"
   },
   "multi-session-orchestration": {
     "hash": "2fccb823f327fd262a45674c01e4972caebbd5d5ff352a4b23193bd967749bd8",
