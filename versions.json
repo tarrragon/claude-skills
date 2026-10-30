@@ -7,6 +7,10 @@
     "hash": "a19ed0b4aa24f4341fe855289547cef7df1d99b4ef67c20fe98ac6656e09724d",
     "version": "1.2.0"
   },
+  "asd-ste100": {
+    "hash": "200633faef0844c46e1a0c8b94d5864845232f57d56f9c5ac2d79b5de2f20c81",
+    "version": "1.1.0"
+  },
   "branch-worktree-guardian": {
     "hash": "279eb212f7f500ef5e9846982dd1947705320a0a609e464630bce36ad1b92258",
     "version": "1.0.1"
