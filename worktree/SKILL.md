@@ -4,7 +4,7 @@ description: "Use this skill for managing git worktrees for Ticket-based develop
 argument-hint: "<subcommand> [args]"
 allowed-tools: Bash, Read, Write, Edit
 metadata:
-  version: 1.6.0
+  version: 1.6.7
 ---
 
 # Worktree Management SKILL
@@ -99,6 +99,7 @@ cc runtime 派發 `isolation: "worktree"` 的 subagent 時自動建立隔離 wor
 - `create`：建立 worktree，見 `references/subcommands.md`〈create — 建立 Worktree〉
 - `status`：查看 worktree 狀態，見 `references/subcommands.md`〈status — 查看 Worktree 狀態〉
 - `merge`：前置驗證後以隔離索引 CAS 直接完成合併（支援 `--branch <分支名>`、`--pre-acceptance <理由>`、`--message <合併訊息>`、`--ticket <票號>`；落後 base 僅提示）（不再輸出 `git merge` 指令）；含 `pre_merge_check` 合併前檢查掛點（簽名、時機、失敗語意、重試成本），見 `references/subcommands.md`〈merge — 以隔離索引 CAS 合併分支〉
+- `cleanup`：三閘門安全清理。無參數為掃描模式；`<ticket-id>` 或 `--branch <分支名>`（擇一，後者用於 `worktree-agent-<id>`）為精確模式；`--force` 略過 Level 2／3 警告，Level 1 未 commit 不可繞過；移除逾時上限 300 秒（`WORKTREE_REMOVE_TIMEOUT_SECONDS`），實際耗時寫入 `worktree-merge.log`；移除失敗時僅在「status 全為 tracked 刪除且 HEAD 為 main 祖先」兩條件皆成立才以 `remove --force` 收尾並 prune，否則非 0 並列出不成立項；worktree 被鎖時停手回報鎖原因與 pid 存活，`--unlock` 明示才解鎖；半刪 worktree（status 全為 tracked 刪除且 HEAD 為 main 祖先）重跑 cleanup 時 Level 1 放行並走收尾，有 untracked 或 modified 仍擋下；語意變更：`git branch -d` 失敗時 rc 由原本的 0 改為 1；實作在 `scripts/cleanup_command.py`，模組位置與測試替換規則見 `references/subcommands.md`〈cleanup — 模組位置〉
 
 ### 合併前全套件（merge 預設行為）
 
@@ -106,12 +107,34 @@ cc runtime 派發 `isolation: "worktree"` 的 subagent 時自動建立隔離 wor
 
 | 改動範圍（相對當下 main） | 跑的套件 |
 |--------------------------|---------|
-| `lib/`、`test/`、`integration_test/`、`macos/`、`docs/`（票檔與版本日誌除外）、`pubspec.*` 等 | Flutter：`fvm flutter test` |
+| `lib/`、`test/`、`integration_test/`、`macos/`、`docs/`、`assets/`（票檔與版本日誌除外）、`pubspec.*` 等 | Flutter：`fvm flutter test` |
 | `.claude/skills/<名稱>/`（該 skill 帶 `tests/`） | `skill:<名稱>`：有 `pyproject.toml` 跑 `uv --directory .claude/skills/<名稱> run pytest`；無則借 hooks 環境 `uv --directory .claude/hooks run pytest -p no:cacheprovider ../skills/<名稱>/tests` |
 | `.claude/scripts/` | scripts pytest：`uv --directory .claude/scripts run pytest` |
 | `.claude/lib/` | hooks pytest（其 testpaths 已含 `../lib/tests`）＋ scripts pytest ＋ 所有「帶 `tests/` 且有 .py 匯入 `lib`」的 skill（掃描快照得出，不寫死清單） |
 | `.claude/hooks/`、無 `tests/` 的 skill、rules、settings.json 等其他 `.claude/` 路徑 | hooks pytest：`uv --directory .claude/hooks run pytest`（hook 測試會讀這些檔） |
-| 只改票檔、版本日誌或其他範圍外路徑 | 免跑 |
+| 只改票檔、版本日誌或其他範圍外路徑 | 免跑；範圍外路徑（豁免清單除外）以 `WARNING` 列出，超過 10 個截斷並附總數，部分免跑時同樣列出；只提醒，不改變放行與否 |
+
+**專案宣告（取代內建 Flutter 對應）**：專案可在 `.claude/project-integration/merge-gate.yaml`（根層 `project-integration/`，sync 雙向排除）宣告套件對應；閘門從合併快照（合併 commit）讀取，分支自身新增或修改的宣告對該分支即時生效。
+
+```yaml
+suites:
+  <套件名>:                     # 不可為 hooks、scripts 或 skill: 開頭（框架保留）
+    prefixes: [<路徑前綴>, ...]  # 與 files 至少一項
+    files: [<精確檔名>, ...]
+    command: [<argv>, ...]      # 相對快照根目錄執行
+    artifacts:                  # 選填；缺產物時先以 generate 生成
+      - path: <gitignored 產物路徑>
+        generate: [<argv>, ...]
+    summary: <正規式>           # 選填；摘要行（取輸出尾端最後一個命中行的命中片段）
+    failure: <正規式>           # 選填；失敗行（紅燈時列出所有命中行）
+    changed_files: <正規式>     # 選填；只檢查改動檔的套件（如格式檢查）
+```
+
+- 宣告檔存在：宣告的套件**取代**上表第一列的 Flutter 對應（不疊加）；`.claude/` 下的對應固定保留、不可宣告。宣告的前綴與檔名同時視為「已對應」，不列入未對應路徑警告。套件順序為宣告順序，排在 hooks、scripts、skill 之前。
+- `summary`／`failure` 有填時優先使用；未填沿用 pytest／flutter 規則，再退回輸出尾段（失敗項）或「無摘要」。宣告命令的輸出格式由專案決定（如 bun：`summary: '^\s*\d+ (pass|fail)'`、`failure: '\(fail\)'`）。
+- `changed_files`（選填正規式）：套件只在「本次改動中有路徑落在 `prefixes`／`files` 內且符合此正規式」時入選；執行時閘門把這些路徑中仍存在於快照者附加到 `command` 尾端。符合檔全數已刪除時該套件免跑，輸出一行 `套件 <名>：免跑｜...`（狀態字樣為「免跑」，與「綠燈」區分）。未宣告者 argv 不變。例：`command: [fvm, dart, format, --output=none, --set-exit-if-changed]` 搭配 `changed_files: '\.dart$'`。
+- 宣告檔不存在：沿用內建 Flutter 對應，並印一行 `[合併前測試] INFO：未找到專案宣告 ...`。
+- 格式錯誤（YAML 無法解析、缺 `command`、`prefixes` 與 `files` 皆空、使用保留名、`artifacts` 缺 `generate`、`summary`／`failure`／`changed_files` 非字串或無法編譯為正規式）：閘門判紅（fail-closed），訊息指名檔案與欄位，不退回內建對應。
 
 skill 被 hooks 或 scripts 使用時加跑對應套件：改動涉及某 skill，且快照內 `.claude/hooks`、`.claude/scripts` 的 .py（1）行首 `from X`／`import X` 匯入該 skill 的頂層模組（skill 根與其 `scripts/` 下的 .py 模組名、帶 `__init__.py` 的套件名；`sys.path.insert` 之後的匯入同樣涵蓋），或（2）非測試檔含 `skills/<名稱>/` 路徑引用（讀 skill 檔案），就加跑 hooks／scripts 套件。未被使用的 skill 只跑自己的套件。通用模組名（如 `constants`）可能多報，只會多跑套件。
 
@@ -120,9 +143,10 @@ skill 被 hooks 或 scripts 使用時加跑對應套件：改動涉及某 skill�
 - 快照內缺 `.dart_tool/package_config.json` 時先 `fvm flutter pub get`；失敗則明確指出缺哪個產物。
 - CAS 重試：驗證狀態以套件為單位記錄。依「該套件上次驗過的 commit 到新 commit」的差異，套用上表的套件選擇規則：差異不觸及該套件就沿用其驗證結果，觸及就只重跑該套件；沒有驗證紀錄的套件（例如匯入掃描使套件集合變大）加跑。`RETRY_REUSE_EXEMPT_GLOBS`（`docs/work-logs/**/tickets/*.md`、`docs/work-logs/**/v*-main.md`、`docs/work-logs/topic-assignments.txt`）內的檔案仍不計入差異，語意不變。沿用的套件輸出 `[合併前測試] 套件 <名稱>：沿用｜沿用 <commit 前 12 碼> 的驗證結果｜耗時 0.0s`，重跑者為原本的綠燈／紅燈結果行；重試超過 `GATE_MAX_RETRIES`（預設 3）中止，ref 不變、分支保留。
 - 每個套件結束輸出一行結果（套件名、狀態、pytest `N passed` 或 flutter `All tests passed` 等摘要、耗時；紅燈、逾時、中斷也記錄），同時寫入 stdout 與 `.claude/logs/worktree-merge.log`。
-- 每次閘門開始與結束各記一行（前綴 `[合併閘門]`，與套件結果行 `[合併前測試]` 刻意不同，名額預估的中位數取樣只認後者）：`[合併閘門] 開始｜target <分支>｜分支 <來源分支>｜commit <base HEAD 前 12 碼>`、`[合併閘門] 結束｜target <分支>｜分支 <來源分支>｜commit <前 12 碼>｜結果 <寫入|拒絕|紅燈|逾時|中止>`。結束行的 commit 在結果為「寫入」時是合併 commit，其餘仍是 base HEAD。「拒絕」涵蓋持有者超出自身預估過久而放棄等待，以及持有期間子程序的名額等待逾時（兩者同為結束碼 125，無法再分）；「逾時」為套件逾時；「中止」為 CAS 衝突、重試上限、非預期例外或中斷。
+- 每次閘門開始與結束各記一行，預檢無衝突時中間多記一行 `[合併閘門] 預檢｜target <分支>｜分支 <來源分支>｜commit <base HEAD 前 12 碼>｜結果 無衝突`（有衝突則無此行，直接記結束行「預檢衝突」；前綴 `[合併閘門]`，與套件結果行 `[合併前測試]` 刻意不同，名額預估的中位數取樣只認後者）：`[合併閘門] 開始｜target <分支>｜分支 <來源分支>｜commit <base HEAD 前 12 碼>`、`[合併閘門] 結束｜target <分支>｜分支 <來源分支>｜commit <前 12 碼>｜結果 <寫入|拒絕|紅燈|逾時|中止|預檢衝突>`。結束行的 commit 在結果為「寫入」時是合併 commit，其餘仍是 base HEAD。「拒絕」涵蓋持有者超出自身預估過久而放棄等待，以及持有期間子程序的名額等待逾時（兩者同為結束碼 125，無法再分）；「逾時」為套件逾時；「預檢衝突」為進場排隊前以 `merge-tree` 試算當下 main 與分支即有文字衝突（不排隊、不占名額，結束碼 1；已合併、空合併、ref 解析失敗放行，由取得名額後的既有路徑判定）；「中止」為取得名額後的 CAS 衝突（含排隊期間 main 前進產生的新衝突）、重試上限、非預期例外或中斷。
 - 持有者超出自身預估過久（疑似卡住）而放棄等待是預期內結果：只輸出名額閘門的一行說明，不印 traceback，`merge` 以 125 結束，ref 不變；非預期例外仍保留 traceback。佇列總等待不設上限，不再因前方預估過長而提早拒絕；進場與等待提示寫出「順位 N（持有者之後第 N 位，順位不含持有者），前方 M 筆，前方第一筆：<命令或分支>」與預估等待，呼叫端自行決定是否中止。持有者換人是先到者取得名額後後方遞補，不是插隊。
 - `--skip-gate <理由>`：略過閘門，理由必填並寫入 `.claude/logs/worktree-merge.log`。
+- 閘門不執行的合併前檢查：分支改到 `.claude/skills/line-board/` 時，PM 在執行 `merge` 前依 `.claude/skills/line-board/SKILL.md`〈合併前型別檢查（手動）〉跑 `tsc` 並讀 rc，未通過不合併。閘門不跑是因為平台型別只在互動式 `--plugin-dir` 啟動時產生，快照內沒有；這一步掛在合併收尾，不依賴派發 prompt 提醒。
 
 ---
 
@@ -213,7 +237,7 @@ Session 啟動時：
 
 ### Q: 如何刪除 Worktree？
 
-**A**: 使用 git 命令（本 SKILL 暫不支援刪除）：
+**A**: 使用 `/worktree cleanup <ticket-id>`（worktree-agent-<id> 用 `/worktree cleanup --branch <分支名>`），經三閘門檢查後移除 worktree 與分支。fallback 為手動 git 命令：
 
 ```bash
 # 刪除 worktree（保留分支）
