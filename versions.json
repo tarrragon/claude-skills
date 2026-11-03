@@ -76,8 +76,8 @@
     "version": "2.0.0"
   },
   "dart-style-guardian": {
-    "hash": "5c5b5ced60152439bed17f98786b48e26c6b09a86f2299f266012de83055b34a",
-    "version": "1.12.1"
+    "hash": "463ac15f240fd70f1d5f106b60f274db687f02233de4aa3e436f9b32bd3c95ff",
+    "version": "1.13.0"
   },
   "dart-test-async-guardian": {
     "hash": "c6fc1b05072c75f7f2110ffe1ba85f17b11e4070cef71766d34e1774ce1fb871",
