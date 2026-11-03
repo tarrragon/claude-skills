@@ -113,6 +113,7 @@ from .track_acceptance import (
 # 導入 dispatch 子命令（派發即落票：--note 落票 + normal/review 骨架輸出）
 from .track_dispatch import execute_dispatch, register_dispatch_command
 from .track_commit import execute_commit, register_commit_command
+from .track_move_lines import execute_move_lines, register_move_lines_command
 # 導入 PC-093-exempt marker 補標記子命令
 from .track_exempt_marker import execute_add_exempt_marker
 from .track_multi_view_status import execute_fix_multi_view_status
@@ -126,6 +127,7 @@ from .track_artifacts import (
 from .track_set_acceptance import execute_set_acceptance
 # 導入 set-closed-by 子命令（closed 票 frontmatter 欄位修正路徑）
 from .track_set_closed_by import execute_set_closed_by
+from .track_set_coordination import execute_set_coordination
 # 導入 restore 子命令（closed 票唯一合法出邊：closed -> pending 還原路徑）
 from .track_restore import execute_restore
 # 導入 set-exit-status / set-completion-info 子命令（1.5.0-W5-021 制式化內容生成）
@@ -525,6 +527,7 @@ def _create_command_handlers() -> dict:
         "check-acceptance": execute_check_acceptance,
         "set-acceptance": execute_set_acceptance,
         "set-closed-by": execute_set_closed_by,
+        "set-coordination": execute_set_coordination,
         "restore": execute_restore,
         "set-exit-status": execute_set_exit_status,
         "set-completion-info": execute_set_completion_info,
@@ -532,6 +535,7 @@ def _create_command_handlers() -> dict:
         "append-log": execute_append_log,
         "dispatch": execute_dispatch,
         "commit": execute_commit,
+        "move-lines": execute_move_lines,
         "add-spawn-request": execute_add_spawn_request,
         "resolve-spawn-request": execute_resolve_spawn_request,
         "add-exempt-marker": execute_add_exempt_marker,
@@ -789,6 +793,17 @@ def _register_lifecycle_commands(
         help="新的 closed_by 值，須為合法且存在的 Ticket ID",
     )
     p_set_closed_by.add_argument("--version", help=TrackMessages.ARG_VERSION)
+
+    # set-coordination 操作（協調票旗標 coordination: true 寫入／清除）
+    p_set_coord = subparsers.add_parser(
+        "set-coordination",
+        help="將既有票標記為協調票（coordination: true）；--clear 清除",
+    )
+    p_set_coord.add_argument("ticket_id", help=TrackMessages.ARG_TICKET_ID)
+    p_set_coord.add_argument(
+        "--clear", action="store_true", help="清除 coordination 旗標"
+    )
+    p_set_coord.add_argument("--version", help=TrackMessages.ARG_VERSION)
 
     # restore 操作（closed 票唯一合法出邊：closed -> pending 還原路徑）
     p_restore = subparsers.add_parser(
@@ -1347,7 +1362,15 @@ def _register_acceptance_commands(
         required=True,
         help=TrackMessages.ARG_SECTION
     )
-    p_append_log.add_argument("content", help=TrackMessages.ARG_CONTENT)
+    p_append_log.add_argument(
+        "content", nargs="?", default=None, help=TrackMessages.ARG_CONTENT
+    )
+    p_append_log.add_argument(
+        "--content-file",
+        dest="content_file",
+        default=None,
+        help="自檔案讀取內容（逐字），與 content 位置參數擇一；內容不經命令列",
+    )
     p_append_log.add_argument("--version", help=TrackMessages.ARG_VERSION)
     p_append_log.add_argument(
         "--force",
@@ -1697,6 +1720,7 @@ def _register_all_subcommands(
     register_onboard(track_subparsers)
     register_dispatch_command(track_subparsers)
     register_commit_command(track_subparsers)
+    register_move_lines_command(track_subparsers)
 
 
 def _register_global_state_commands(

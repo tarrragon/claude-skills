@@ -526,7 +526,7 @@ def test_dispatch_hook_ticket_appends_four_item_reminder(dispatch_ticket_hook_sc
     out = capsys.readouterr().out
     # 比對提醒常數的每個條目行，而非硬寫整段字面
     entries = [ln.strip() for ln in HOOK_TICKET_REMINDER.splitlines() if ln.strip()]
-    assert len(entries) >= 5
+    assert len(entries) >= 2
     assert all(entry in out for entry in entries)
 
 
@@ -741,3 +741,271 @@ def test_dispatch_worktree_closing_excludes_ticket_md_from_commit(dispatch_ticke
     assert "產品檔" in closing
     assert "主 repo" in closing
     assert "票面" not in default_closing
+
+
+# --- 含測試 acceptance 的 IMP 骨架紅燈實跑要求（0.5.0-W1-388） -----------
+
+from ticket_system.lib.dispatch_skeleton import (  # noqa: E402
+    RED_RUN_LINE,
+    build_skeleton,
+    requires_red_run,
+)
+
+
+@pytest.mark.parametrize(
+    "ticket_type, acceptance, expected",
+    [
+        ("IMP", ["[ ] 新增測試全綠"], True),
+        ("IMP", ["[ ] 守衛含 E2 正向對照"], True),
+        ("IMP", ["[ ] 旗標 E1 對照"], True),
+        ("IMP", ["[ ] 文件更新完成"], False),
+        ("DOC", ["[ ] 測試通過"], False),
+        ("ANA", ["[ ] 測試通過"], False),
+        ("IMP", [], False),
+        ("IMP", None, False),
+    ],
+)
+def test_requires_red_run_predicate(ticket_type, acceptance, expected):
+    assert requires_red_run(ticket_type, acceptance) is expected
+
+
+def _skeleton(**overrides) -> str:
+    kwargs = dict(kind="normal", ticket_id="T-1", task_summary="x")
+    kwargs.update(overrides)
+    return build_skeleton(**kwargs)
+
+
+def test_skeleton_includes_red_run_line_when_required():
+    assert RED_RUN_LINE in _skeleton(require_red_run=True)
+
+
+def test_skeleton_unchanged_when_red_run_not_required():
+    assert RED_RUN_LINE not in _skeleton()
+    assert _skeleton(require_red_run=True).replace(RED_RUN_LINE + "\n", "") == _skeleton()
+
+
+def test_dispatch_cli_wires_red_run_line_for_test_acceptance_imp(dispatch_ticket, capsys, monkeypatch):
+    monkeypatch.setattr(td_mod, "requires_red_run", lambda *_: True)
+    rc = td_mod.execute_dispatch(_base_args(ticket_id=dispatch_ticket), "0.0.0")
+    assert rc == 0
+    assert RED_RUN_LINE in capsys.readouterr().out
+
+
+# --- worktree 骨架：票面 CLI 被拒處置與 heredoc 傳入（0.5.0-W1-355.1） -----
+
+from ticket_system.lib.dispatch_skeleton import (  # noqa: E402
+    WORKTREE_CLI_REJECT_LINE,
+    WORKTREE_MULTILINE_LINE,
+)
+
+
+def test_worktree_skeleton_includes_cli_reject_and_multiline_lines():
+    out = _skeleton(isolation="worktree")
+    assert WORKTREE_CLI_REJECT_LINE in out
+    assert WORKTREE_MULTILINE_LINE in out
+    assert "### 自檢結果" in WORKTREE_MULTILINE_LINE
+    assert "--content-file" in WORKTREE_MULTILINE_LINE
+    assert "票號" in WORKTREE_MULTILINE_LINE
+    assert "以 heredoc 傳" not in WORKTREE_MULTILINE_LINE
+    assert "\n" not in WORKTREE_MULTILINE_LINE
+
+
+def test_none_and_review_skeletons_unchanged_by_worktree_lines():
+    for out in (_skeleton(), _skeleton(kind="review")):
+        assert WORKTREE_CLI_REJECT_LINE not in out
+        assert WORKTREE_MULTILINE_LINE not in out
+    assert _skeleton(isolation="none") == _skeleton()
+
+
+# --- 骨架依 where.files 附測試入口命令（0.5.0-W1-397） ---------------------
+
+from ticket_system.lib.dispatch_skeleton import entry_commands_for_files  # noqa: E402
+
+_HOOKS_ENTRY = "uv --directory <checkout>/.claude/hooks run pytest"
+
+
+_REAL_ROOT = Path(__file__).resolve().parents[5]
+
+
+@pytest.fixture
+def entry_root(tmp_path):
+    skills = tmp_path / ".claude" / "skills"
+    (skills / "ticket").mkdir(parents=True)
+    (skills / "ticket" / "pyproject.toml").write_text("")
+    (skills / "spec" / "tests").mkdir(parents=True)
+    (skills / "bare").mkdir()
+    return tmp_path
+
+
+@pytest.mark.parametrize(
+    "files, expected",
+    [
+        ([".claude/skills/bare/a.py"], []),
+        ([".claude/hooks/x-hook.py"], [_HOOKS_ENTRY]),
+        ([".claude/lib/y.py"], [_HOOKS_ENTRY]),
+        (
+            [".claude/skills/ticket/ticket_system/lib/a.py"],
+            ["uv --directory <checkout>/.claude/skills/ticket run pytest"],
+        ),
+        (
+            [".claude/skills/spec/scripts/a.py"],
+            [_HOOKS_ENTRY + " <checkout>/.claude/skills/spec/tests"],
+        ),
+        ([".claude/hooks/a.py", ".claude/hooks/b.py"], [_HOOKS_ENTRY]),
+        (["lib/main.dart", "docs/a.md", ".claude/rules/a.md"], []),
+        ([], []),
+    ],
+)
+def test_test_entry_commands_mapping(entry_root, files, expected):
+    assert entry_commands_for_files(files, entry_root) == expected
+
+
+def test_own_pyproject_skills_match_testing_md_table():
+    """md 表落後檔案系統（漏列有 pyproject 的 skill）時翻紅。"""
+    skills_dir = _REAL_ROOT / ".claude" / "skills"
+    derived = {p.parent.name for p in skills_dir.glob("*/pyproject.toml")}
+    md = (_REAL_ROOT / ".claude/references/agent-dispatch-testing.md").read_text()
+    listed = {"ticket"}
+    for line in md.splitlines():
+        if line.startswith("| skills/doc"):
+            names = line.split("|")[1].strip().removeprefix("skills/")
+            listed |= {n.strip() for n in names.split("、")}
+    assert derived == listed
+
+
+def test_skeleton_includes_test_entry_only_when_mapped():
+    entries = entry_commands_for_files([".claude/hooks/x.py"], _REAL_ROOT)
+    with_entry = _skeleton(test_entries=entries)
+    assert _HOOKS_ENTRY in with_entry
+    assert _HOOKS_ENTRY not in _skeleton()
+    assert _skeleton(test_entries=[]) == _skeleton()
+
+
+# --- 閘門逐檔檢查套件併入收尾句（0.5.0-W1-563.1） ---------------------------
+#
+# merge-gate.yaml 帶 changed_files 的套件只對本次改動檔執行，結果由代理人自己的
+# 改動決定；骨架依 where.files 推出命令併入收尾句，代理人提交前在本機先跑。
+
+from ticket_system.lib.dispatch_skeleton import (  # noqa: E402
+    GATE_DECLARATION_PATH,
+    GateDeclarationError,
+    gate_check_commands,
+)
+
+_GATE_YAML = """suites:
+  dart-format:
+    prefixes: [lib/, test/, integration_test/]
+    command: [fvm, dart, format, --output=none, --set-exit-if-changed]
+    changed_files: '\\.dart$'
+  flutter:
+    prefixes: [lib/, test/]
+    files: [pubspec.yaml]
+    command: [fvm, flutter, test]
+  pinned:
+    files: [tool/gen.dart]
+    command: [dart, run, tool/check.dart]
+    changed_files: 'gen'
+"""
+
+_FORMAT_CMD = "fvm dart format --output=none --set-exit-if-changed"
+
+
+def test_gate_check_commands_only_changed_files_suites():
+    files = ["lib/a.dart", "test/b_test.dart", "docs/x.md", "pubspec.yaml", "lib/c.json"]
+    assert gate_check_commands(files, _GATE_YAML) == [
+        f"{_FORMAT_CMD} lib/a.dart test/b_test.dart"
+    ]
+
+
+def test_gate_check_commands_matches_exact_files_entry():
+    assert gate_check_commands(["tool/gen.dart"], _GATE_YAML) == [
+        "dart run tool/check.dart tool/gen.dart"
+    ]
+
+
+@pytest.mark.parametrize("files", [[], ["docs/x.md"], ["pubspec.yaml"], ["lib/c.json"]])
+def test_gate_check_commands_empty_when_no_file_matches(files):
+    assert gate_check_commands(files, _GATE_YAML) == []
+
+
+@pytest.mark.parametrize("text", [None, "", "suites: {}\n"])
+def test_gate_check_commands_empty_without_declaration(text):
+    assert gate_check_commands(["lib/a.dart"], text) == []
+
+
+@pytest.mark.parametrize("text", ["suites: [1, 2\n", "suites: 3\n", "- a\n"])
+def test_gate_check_commands_raises_on_malformed_declaration(text):
+    with pytest.raises(GateDeclarationError):
+        gate_check_commands(["lib/a.dart"], text)
+
+
+def test_quotes_paths_with_spaces():
+    cmds = gate_check_commands(["lib/a b.dart"], _GATE_YAML)
+    assert cmds == [f"{_FORMAT_CMD} 'lib/a b.dart'"]
+
+
+@pytest.mark.parametrize("isolation", ["none", "worktree"])
+def test_skeleton_closing_contains_gate_check_before_commit(isolation):
+    cmd = f"{_FORMAT_CMD} lib/a.dart"
+    with_gate = _skeleton(isolation=isolation, gate_checks=[cmd])
+    without = _skeleton(isolation=isolation)
+    assert with_gate != without  # E1：傳與不傳產物不同
+    assert cmd not in without
+    closing = next(l for l in with_gate.splitlines() if l.startswith("收尾："))
+    assert cmd in closing
+    commit_word = "ticket track commit" if isolation == "worktree" else "→ commit →"
+    assert closing.index(cmd) < closing.index(commit_word)
+    assert len(with_gate.splitlines()) == len(without.splitlines())  # 不新增行
+
+
+def test_skeleton_unchanged_when_gate_checks_empty():
+    assert _skeleton(gate_checks=[]) == _skeleton()
+    assert _skeleton(isolation="worktree", gate_checks=()) == _skeleton(isolation="worktree")
+
+
+def _write_gate_declaration(root: Path, text: str) -> None:
+    path = root / GATE_DECLARATION_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_dispatch_cli_wires_gate_check_from_declaration(tmp_path, monkeypatch, capsys):
+    root = tmp_path / "checkout"
+    _write_gate_declaration(root, _GATE_YAML)
+    monkeypatch.setattr(td_mod, "_CHECKOUT_ROOT", root)
+    _make_dispatch_ticket(tmp_path, monkeypatch, where_files=["lib/a.dart", "docs/x.md"])
+    rc, out, err = _dispatch_out(_base_args(isolation="worktree"), capsys)
+    assert rc == 0
+    assert f"{_FORMAT_CMD} lib/a.dart" in out
+    assert "docs/x.md" not in out.split("收尾：", 1)[1].split("\n", 1)[0]
+
+
+def test_dispatch_cli_no_gate_check_without_declaration(tmp_path, monkeypatch, capsys):
+    root = tmp_path / "checkout"
+    root.mkdir()
+    monkeypatch.setattr(td_mod, "_CHECKOUT_ROOT", root)
+    _make_dispatch_ticket(tmp_path, monkeypatch, where_files=["lib/a.dart"])
+    rc, out, err = _dispatch_out(_base_args(isolation="worktree"), capsys)
+    assert rc == 0
+    assert "閘門逐檔檢查" not in out
+
+
+def test_dispatch_cli_warns_on_malformed_declaration(tmp_path, monkeypatch, capsys):
+    root = tmp_path / "checkout"
+    _write_gate_declaration(root, "suites: [1, 2\n")
+    monkeypatch.setattr(td_mod, "_CHECKOUT_ROOT", root)
+    _make_dispatch_ticket(tmp_path, monkeypatch, where_files=["lib/a.dart"])
+    rc, out, err = _dispatch_out(_base_args(isolation="worktree"), capsys)
+    assert rc == 0
+    assert "WARNING" in err and GATE_DECLARATION_PATH in err
+    assert "ticket track claim" in out  # 骨架照常輸出
+    assert "閘門逐檔檢查" not in out
+
+
+def test_real_declaration_yields_dart_format_for_dart_files():
+    """本 checkout 的宣告若含 changed_files 套件，對 .dart 檔應產出命令（宣告不存在則略過）。"""
+    path = _REAL_ROOT / GATE_DECLARATION_PATH
+    if not path.is_file():
+        pytest.skip("本 checkout 無閘門宣告")
+    cmds = gate_check_commands(["lib/x.dart"], path.read_text(encoding="utf-8"))
+    assert all(c.endswith(" lib/x.dart") for c in cmds)

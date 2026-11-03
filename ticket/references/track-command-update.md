@@ -59,6 +59,9 @@
 # 派發前章節 Problem Analysis / Context Bundle 例外允許 pending 直寫（PM bookkeeping，不需 --force）
 /ticket track append-log <id> --section "Problem Analysis" "內容"
 /ticket track append-log <id> --section "Context Bundle" "PCB 內容（派發前分析結果，PC-040）"
+# --content-file <path>：自檔案逐字讀取內容，與位置參數 content 擇一（同時給或都不給即拒絕；
+# 讀檔失敗、或內容為空或僅空白，皆非 0 結束且票面不變）。內容不經命令列，適用含反引號、$(...)、git 命令形態而被 runtime 拒絕的長文；可與 --replace 併用
+/ticket track append-log <id> --section "Solution" --content-file <path>
 #
 # Section 標題容錯（W17-008.9）：
 # - 標題比對採 MULTILINE + \s+ 容許多空白 + \s*$ 容尾空白
@@ -195,6 +198,8 @@
 ### `title` 與 `what` 是兩個獨立欄位，`set-what` 刻意不同步 `title`
 
 `title` 是清單顯示用的短標籤（dashboard / runqueue 顯示的是它），`what` 是完整任務敘述（可含檔案清單、括號補充）；兩者常刻意不同（量測見 `CHANGELOG.md`）。票的範圍事後縮小時（如依上游評估結論移除 acceptance），**兩個欄位都要更新**——只改 `what` 會讓清單上的 `title` 繼續以舊範圍誤導接手者。更新用 `set-title <id> <value>`。
+
+**範圍欄位同步提示**：範圍由 `title`、`what`、`acceptance`、`where.files`、`how.strategy` 五欄共同表達。`set-title`／`set-what`／`set-where`（改到 files）／`set-acceptance`（`--add`／`--edit`／`--remove`）寫入後，stdout 會列出其餘非空範圍欄位的現值摘要與對應 set- 指令。被改欄位原值為空（首次填寫）時不印；勾選／取消勾選不印；只印不擋，exit code 不變。
 
 ### 其餘 frontmatter 欄位若無對應命令，不要手動編輯
 
