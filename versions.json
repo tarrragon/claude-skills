@@ -11,6 +11,10 @@
     "hash": "200633faef0844c46e1a0c8b94d5864845232f57d56f9c5ac2d79b5de2f20c81",
     "version": "1.1.0"
   },
+  "blank-slate-review": {
+    "hash": "68cc347feb7fbd3fe624b6612395990ec2f69f2846968a5fb137668e48367fb4",
+    "version": "1.0.0"
+  },
   "branch-worktree-guardian": {
     "hash": "279eb212f7f500ef5e9846982dd1947705320a0a609e464630bce36ad1b92258",
     "version": "1.0.1"
