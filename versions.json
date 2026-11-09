@@ -128,8 +128,8 @@
     "version": "6.8.0"
   },
   "framework-issue": {
-    "hash": "f16d13b2f86eade03b29c47065bcf8c1631da40c691927ed000ba6fdde5c0d7b",
-    "version": "2.7.0"
+    "hash": "9e7f5ca84d41a8ae0b8dc834f420362e5b4e52b4a98569f42c6d4acab008467c",
+    "version": "2.8.0"
   },
   "frontend-with-playwright": {
     "hash": "a65340f55d6da9c3db84be588ce41746362098a358b4e3276536a1acccc54527",
