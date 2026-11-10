@@ -144,8 +144,8 @@
     "version": "3.5.1"
   },
   "knowledge-cards": {
-    "hash": "9498fbcb4347a5d5c0737230c1aeb2b1256573c1bf4d27c97179f64d251c00dc",
-    "version": "1.8.2"
+    "hash": "e2913f7cf59e9edf800fbc63f0734f5dae569c0bef2c0a884eaea46737014388",
+    "version": "1.9.0"
   },
   "linux-install-debug": {
     "hash": "faab54c2c929c7ccf679f01fcef833e5c9290c6f63a63916edea4faee3d939fd",
@@ -168,8 +168,8 @@
     "version": "1.0.2"
   },
   "multi-round-review": {
-    "hash": "8610126aaa06d350d3a8ae6d0934a75b5f84ffd617e27e6f775f89fd53a05b3a",
-    "version": "2.34.0"
+    "hash": "d3934e5aef2cc266891fd09ac8e8422f7502c2e903051e8215d23a6255070a49",
+    "version": "2.35.0"
   },
   "multi-session-orchestration": {
     "hash": "b670ef42069bdfdeca2b035faf708e90949cf030cffcc00c5ed325beb0dd4790",
