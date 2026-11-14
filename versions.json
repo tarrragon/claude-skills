@@ -64,8 +64,8 @@
     "version": "1.1.2"
   },
   "continuous-learning": {
-    "hash": "748e24607f82798f7849795aef7b6e39a24883baadbdeafb96bb638127fa49ad",
-    "version": "4.2.0"
+    "hash": "c730a0610475af64642c3164c567b595579a24c5c5f7ee668029ccf11feb747e",
+    "version": "4.2.1"
   },
   "dart-comment-traceability": {
     "hash": "0da4550f47cd531f22e48b2a979ecf43e5e4ab3c8b244d0e18cfa121afa60ee1",
