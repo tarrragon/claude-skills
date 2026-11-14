@@ -96,8 +96,8 @@
     "version": "2.0.0"
   },
   "design-decision-framework": {
-    "hash": "ea6f9168a086cd6c752635bddd4777e1c64b0f9485377d6aa51ba73a06f3b8b4",
-    "version": "1.3.2"
+    "hash": "571380faf24b950c87f3f12f1847f0133841d6900f9528e21b54118dec43c392",
+    "version": "1.3.3"
   },
   "dispatch-strategy-review": {
     "hash": "b37c989e22bdaa41e1b5ebe501c7a1b1088a0306ff49019863cb0c8dc81a77e8",
