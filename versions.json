@@ -40,8 +40,8 @@
     "version": "1.8.0"
   },
   "cc-release-impact-review": {
-    "hash": "84d7ec3c59fbccfd5869f9465879ba358f91287a486bff6f2881d9d97bde5caa",
-    "version": "1.0.0"
+    "hash": "fc423bc071791e87b13528098062936745600a581a4a18b4067da1547217ba2b",
+    "version": "1.0.1"
   },
   "chrome-extension-mcp-debug": {
     "hash": "e540d6753db9ea62a43c56a623caf105b469ff1553b7c0ee80bc5ef6d0eff361",
