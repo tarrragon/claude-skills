@@ -80,8 +80,8 @@
     "version": "2.0.0"
   },
   "dart-style-guardian": {
-    "hash": "463ac15f240fd70f1d5f106b60f274db687f02233de4aa3e436f9b32bd3c95ff",
-    "version": "1.13.0"
+    "hash": "5ab440f837c11c33e5177bd4f5c6dbdec23176bfee4998cfdf413f791dd4aeaf",
+    "version": "1.13.1"
   },
   "dart-test-async-guardian": {
     "hash": "c6fc1b05072c75f7f2110ffe1ba85f17b11e4070cef71766d34e1774ce1fb871",
