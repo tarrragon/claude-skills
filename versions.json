@@ -296,8 +296,8 @@
     "version": "1.10.0"
   },
   "wrap-decision": {
-    "hash": "7584892673f6e64d3aa5b24ef66396baaed3501528107b550b6d071caf990575",
-    "version": "2.17.0"
+    "hash": "fc98a86a6c5b95da6e5b24ef2dcc21031363667352b42e4b5b0b3881eb185cf7",
+    "version": "2.17.1"
   },
   "zellij": {
     "hash": "4bd7fb435593c35ca9ceb357892d12e48e2891854d2019c87d63f472cd87c345",
