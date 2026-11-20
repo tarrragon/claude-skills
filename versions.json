@@ -112,8 +112,8 @@
     "version": "1.1.1"
   },
   "error-pattern": {
-    "hash": "afe43b7de0c2961c65e39c5e4f65510b99d6281b610470b8159c574d946094d5",
-    "version": "1.7.2"
+    "hash": "899ef97d82cc776345779efd246d0699870f2ce28a7f102c4c48ddb2cd0a9c67",
+    "version": "1.10.0"
   },
   "event-flow-arbitration-design": {
     "hash": "07519a9ccb2a03907e080241668cb360ffedc4e4320c9265850afb49bdff7f7f",
