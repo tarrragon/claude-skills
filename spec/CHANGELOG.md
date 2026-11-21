@@ -2,6 +2,10 @@
 
 新到舊。版號規則與兩個住址（本檔與 `SKILL.md` frontmatter 的 `metadata.version`）見專案的 skill 同步規範。
 
+**Version**: 1.10.2（2026-11-21）— 事件流標定檢核（`--check-event-flow-labeling`）的輸出與 docstring 不再標示「非阻擋」，改寫明有缺口時 exit 1；SKILL.md 事件流標定段補結束碼。結束碼不變。
+
+**Version**: 1.10.1（2026-11-21）— `check_api_surface` 讀 frontmatter 的 `has_functional_requirements` 宣告（與 `check_domain_coverage` 一致）：宣告 false 且無 FR 時 exit 0，輸出明示未執行比對、不印通過。未宣告無 FR、宣告 false 但有 FR 標題行、宣告非布林或重複，仍為 exit 1。
+
 **Version**: 1.10.0（2026-11-21）— 檢核腳本的輸出如實、SPEC 識別與 doc 端一致、docs 解析根改讀 `CLAUDE_PROJECT_DIR`：
 - 檢核輸出：「找不到章節」與「缺標定」分開回報；FR 切段只用一套抽取規則；切出 0 段時不通過；NFR 的左邊界與 map 的 `domain` 欄另有檢查。部分檢查的結束碼由 0 變 1。
 - SPEC 識別：`SPEC_ID_RE` 與 doc skill 的 SPEC id_pattern 同值，接受具名 id，尾端加邊界，長數字 id 不再被截斷。舊結構（§7 沒有 SPEC 子標題）的訊息與 doc 端對齊。

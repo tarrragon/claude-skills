@@ -1527,6 +1527,16 @@ def test_event_flow_section_present_but_unlabeled_keeps_unlabeled_message(tmp_pa
     assert "未見通道標定" in out and "找不到" not in out
 
 
+def test_event_flow_output_does_not_claim_non_blocking_while_exit_1(tmp_path, monkeypatch, capsys):
+    """輸出字樣須與結束碼一致：有缺口 exit 1，不得標示「非阻擋」（#107）。"""
+    for map_text in ("| FR-01 | Ledger |\n",
+                     "| FR-01 | Ledger |\n## 2.5. 通道與協調圖\n### 2.5.3 到達類別與級別實例\n| x |\n"):
+        spec = _flow_fixture(tmp_path, monkeypatch, map_text)
+        assert cdc.main([str(spec), "--check-event-flow-labeling"]) == 1
+        out = capsys.readouterr().out
+        assert "非阻擋" not in out and "exit 1" in out
+
+
 # --- 層級模式覆蓋缺口（parsed_maps 不依賴非層級分支）---
 
 def test_layer_mode_uncovered_reports_gap_without_error(tmp_path, monkeypatch, capsys):
