@@ -200,8 +200,8 @@
     "version": "1.7.0"
   },
   "requirement-protocol": {
-    "hash": "55feaaf26918564de7e3f2fa28410f40ee04b4e93bd3c538d8335cbf047ebd68",
-    "version": "0.8.5"
+    "hash": "0b4a4f8ac7b75b668e1d6c867e3a2e771872e705f3137a09d835f2781cf7fd4f",
+    "version": "0.9.0"
   },
   "saas-tech-selection": {
     "hash": "4eb844bad74727808301aa646c36f5bd1d1b0a7bec266dcc671c9684c379d575",
