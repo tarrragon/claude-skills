@@ -43,6 +43,10 @@
     "hash": "fc423bc071791e87b13528098062936745600a581a4a18b4067da1547217ba2b",
     "version": "1.0.1"
   },
+  "chrome-extension-dev-loop": {
+    "hash": "b8bd6877eddee7891f91aa6907b72fc86e15c9aa62c8b4292eb69a1213c52ca3",
+    "version": "1.0.0"
+  },
   "chrome-extension-mcp-debug": {
     "hash": "75fcd9736ddf940ffa7abaec6034f6d8a98108039fe572b449db30bfc4363255",
     "version": "1.1.1"
