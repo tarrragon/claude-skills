@@ -51,6 +51,10 @@
     "hash": "75fcd9736ddf940ffa7abaec6034f6d8a98108039fe572b449db30bfc4363255",
     "version": "1.1.1"
   },
+  "chrome-extension-playwright-testing": {
+    "hash": "e94f5f177833314cde832c1b3d4b24c70c3e5803d904c142441f6860a2e2e5bc",
+    "version": "1.0.0"
+  },
   "cognitive-load-assessment": {
     "hash": "c7d2b4270f8596ce411e2a3f51bb4478516109e2cd6012626577a56777a94820",
     "version": "2.1.3"
