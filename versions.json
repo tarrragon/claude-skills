@@ -44,8 +44,8 @@
     "version": "1.0.1"
   },
   "chrome-extension-dev-loop": {
-    "hash": "b8bd6877eddee7891f91aa6907b72fc86e15c9aa62c8b4292eb69a1213c52ca3",
-    "version": "1.0.0"
+    "hash": "24e4b72f3b93c0713c46f661fba42c64fcd5d717a3953edc7b2b98be1bb7264f",
+    "version": "1.1.0"
   },
   "chrome-extension-mcp-debug": {
     "hash": "75fcd9736ddf940ffa7abaec6034f6d8a98108039fe572b449db30bfc4363255",
