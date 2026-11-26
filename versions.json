@@ -131,6 +131,10 @@
     "hash": "056d37e0b8e6a9627fe9117fb17de24e183a2e8bae5df4fcefec277764c84bc4",
     "version": "2.2.1"
   },
+  "flutter-device-verification": {
+    "hash": "e85120eab62c63a4afe4bbe242437ccc48cb9c70873d2be17188522ca3943dbc",
+    "version": "1.0.0"
+  },
   "foundation-design": {
     "hash": "c11db9105587d542cc0129d5d19cde57106bbc022adb5dac4170b2f85134060c",
     "version": "6.12.0"
